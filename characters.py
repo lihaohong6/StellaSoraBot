@@ -4,7 +4,7 @@ from functools import cache
 from pywikibot import Page
 from pywikibot.pagegenerators import PreloadingGenerator
 
-from data_utils import load_json
+from data_utils import load_json, autoload
 from wiki_utils import s
 
 
@@ -17,11 +17,11 @@ class Character:
 
 @cache
 def get_characters() -> dict[str, Character]:
-    data, i18n = load_json("Character")
+    data = autoload("Character")
     base_info, base_info_i18n = load_json("CharacterArchiveBaseInfo")
     result = {}
     for k, v in data.items():
-        name = i18n[v["Name"]]
+        name = v["Name"]
         c = Character(v["Id"], name)
         c.birthday = base_info_i18n.get(f"CharacterArchiveBaseInfo.{c.id}02.2", None)
         result[name] = c
@@ -36,3 +36,8 @@ def get_character_pages() -> dict[str, Page]:
         if page.exists():
             result[page.title()] = page
     return result
+
+
+def get_id_to_char() -> dict[int, Character]:
+    chars = get_characters()
+    return dict((c.id, c) for c in chars.values())
