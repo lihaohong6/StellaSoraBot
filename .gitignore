@@ -1,0 +1,7 @@
+StellaSoraData/
+.idea/
+*.ctrl
+*.lwp
+user-passwords.py
+apicache/
+/__pycache__
