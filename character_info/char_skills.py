@@ -5,6 +5,7 @@ from wikitextparser import parse, Template
 
 from character_info.characters import get_id_to_char, get_character_pages
 from data_utils import autoload, load_json
+from wiki_utils import force_section_text
 
 
 def skill_escape(bd) -> str:
@@ -139,16 +140,8 @@ def update_skills():
 
         parsed = parse(page.text)
         text = '\n'.join(result)
-        for sec in parsed.sections:
-            if not sec.title:
-                continue
-            if sec.title.strip() == "Gallery":
-                sec.string = "==Skills==\n" + text + "\n" + sec.string
-                break
-            if sec.title.strip() == "Skills":
-                sec.contents = text + "\n"
-                break
-        else:
+        res = force_section_text(parsed, "Skills", text, "Gallery")
+        if not res:
             print(f"Warning: skill section not found for {char_name}")
             continue
         page.text = str(parsed)
