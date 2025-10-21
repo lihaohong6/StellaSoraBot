@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from functools import cache
 
@@ -14,6 +15,7 @@ class AffinityArchive:
     title: str
     content: str
 
+
 @cache
 def get_affinity_archives() -> dict[str, list[AffinityArchive]]:
     chars = get_characters()
@@ -21,19 +23,24 @@ def get_affinity_archives() -> dict[str, list[AffinityArchive]]:
     data = autoload("CharacterArchiveContent")
     for name, char in chars.items():
         lst = []
-        for i in range(3, 11): # 14
+        for i in range(3, 11):  # 14
             key = f"{char.id}{i:02}"
             if key not in data:
                 break
             row = data[key]
+            content = row['Content']
+            content = content.replace("\n", "<br/>").replace("==PLAYER_NAME==", "<player name>")
+            # FIXME: should be replaced with icons, but we don't know where they are for now
+            content = re.sub("<sprite[^>]+>", "", content)
             lst.append(AffinityArchive(
                 id=row['Id'],
                 title=row['Title'],
-                content=row['Content'].replace("\n", "<br/>").replace("==PLAYER_NAME==", "<player name>"),
+                content=content
             ))
         else:
             result[name] = lst
     return result
+
 
 def story_to_tabs(stories: list[AffinityArchive]):
     result = ["<tabber>"]
@@ -43,6 +50,7 @@ def story_to_tabs(stories: list[AffinityArchive]):
     result.append("</tabber>")
     return "\n".join(result)
 
+
 def save_affinity_archives():
     affinity_archives = get_affinity_archives()
     for char_name, page in get_character_pages().items():
@@ -51,8 +59,10 @@ def save_affinity_archives():
         force_section_text(parsed, "Story", text, "Gallery")
         save_page(page, str(parsed), "update character story in affinity archive")
 
+
 def main():
     save_affinity_archives()
+
 
 if __name__ == '__main__':
     main()
