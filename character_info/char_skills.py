@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from wikitextparser import parse, Template
 
-from characters import get_id_to_char, get_character_pages
+from character_info.characters import get_id_to_char, get_character_pages
 from data_utils import autoload, load_json
 
 

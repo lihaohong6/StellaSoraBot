@@ -1,6 +1,6 @@
 from wikitextparser import parse
 
-from characters import get_characters, get_character_pages
+from character_info.characters import get_characters, get_character_pages
 
 
 def main():
