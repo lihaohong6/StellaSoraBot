@@ -1,5 +1,5 @@
 from pywikibot import Site, Page
-from wikitextparser import WikiText
+from wikitextparser import WikiText, Template
 
 s = Site()
 
@@ -22,3 +22,10 @@ def save_page(page: Page | str, text, summary: str = "update page"):
     if page.text.strip() != text.strip():
         page.text = text
         page.save(summary=summary)
+
+
+def find_template_by_name(wikitext: WikiText, name: str) -> Template | None:
+    for t in wikitext.templates:
+        if t.name.strip() == name:
+            return t
+    return None
