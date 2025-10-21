@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from data_utils import autoload
+from utils.data_utils import autoload
 
 @dataclass
 class ArchiveNote:

@@ -4,8 +4,8 @@ from functools import cache
 from wikitextparser import parse
 
 from character_info.characters import get_characters, get_character_pages
-from data_utils import autoload
-from wiki_utils import force_section_text, save_page
+from utils.data_utils import autoload
+from utils.wiki_utils import force_section_text, save_page
 
 
 @dataclass

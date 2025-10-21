@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from wikitextparser import parse, Template
 
 from character_info.characters import get_id_to_char, get_character_pages
-from data_utils import autoload, load_json
-from wiki_utils import force_section_text
+from utils.data_utils import autoload, load_json
+from utils.wiki_utils import force_section_text
 
 
 def skill_escape(bd) -> str:

@@ -3,7 +3,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
-data_root = Path("StellaSoraData")
+data_root = Path("../StellaSoraData")
 en_root = data_root / "EN"
 json_root = en_root / "bin"
 strings_root = en_root / "language/en_US"

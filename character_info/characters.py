@@ -4,8 +4,8 @@ from functools import cache
 from pywikibot import Page
 from pywikibot.pagegenerators import PreloadingGenerator
 
-from data_utils import load_json_pair, autoload
-from wiki_utils import s
+from utils.data_utils import load_json_pair, autoload
+from utils.wiki_utils import s
 
 
 @dataclass
