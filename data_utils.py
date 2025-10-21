@@ -1,6 +1,7 @@
 import json
 from functools import cache
 from pathlib import Path
+from typing import Any
 
 data_root = Path("StellaSoraData")
 en_root = data_root / "EN"
@@ -11,12 +12,18 @@ assert en_root.exists()
 assert json_root.exists()
 assert strings_root.exists()
 
-@cache
-def load_json(name: str) -> tuple[dict, dict]:
-    return json.load(open(json_root / f"{name}.json")), json.load(open(strings_root / f"{name}.json"))
+def load_json(name: str) -> dict[str, Any]:
+    path = json_root / f"{name}.json"
+    return json.load(open(path, "r", encoding="utf-8"))
 
+@cache
+def load_json_pair(name: str) -> tuple[dict, dict]:
+    return (json.load(open(json_root / f"{name}.json", "r", encoding="utf-8")),
+            json.load(open(strings_root / f"{name}.json", "r", encoding="utf-8")))
+
+@cache
 def autoload(name: str) -> dict:
-    data, i18n = load_json(name)
+    data, i18n = load_json_pair(name)
 
     def replace_with_new_string(d: dict):
         for k, v in d.items():

@@ -4,7 +4,53 @@ from dataclasses import dataclass
 from wikitextparser import parse, Template
 
 from characters import get_id_to_char, get_character_pages
-from data_utils import autoload
+from data_utils import autoload, load_json
+
+
+def skill_escape(bd) -> str:
+    bd = bd.replace('\v', ' ')
+    bd, _ = re.subn(r'##([^#]+)#[^#]+#', lambda m: m.group(1), bd)
+    bd, _ = re.subn(r'<color=(#[^>]{3,8})>([^<]+)</color>',
+                    lambda m: f"{{{{color|{m.group(1)}|{m.group(2)}}}}}",
+                    bd)
+    bd, _ = re.subn(r"&Param\d+&", "<param>", bd)
+    return bd
+
+
+def parse_param(param: str) -> list[int] | int:
+    segments = param.split(',')
+    file_name = segments[0]
+    data = load_json(file_name)
+    param_id = segments[2]
+    row: dict = data.get(str(param_id), None)
+    if row is not None and "SkillPercentAmend" in row:
+        return row["SkillPercentAmend"]
+    if file_name == "Effect":
+        effect_value = load_json("EffectValue")
+        cur_id = int(param_id) + 10
+        if str(cur_id) not in effect_value:
+            raise RuntimeError(f"Effect not found for {param}")
+        result = []
+        for i in range(0, 10):
+            result.append(effect_value[str(cur_id + i * 10)]['EffectTypeParam1'])
+        return result
+    if file_name == "EffectValue":
+        assert segments[1] == "NoLevel"
+        return row['EffectTypeParam1']
+    if file_name == "BuffValue":
+        return row["Time"] / 10000
+    return 0
+    raise RuntimeError(f"Could not parse param {param}")
+
+
+def parse_params(d: dict) -> list[list[str]]:
+    params = []
+    for i in range(1, 100):
+        param_key = f"Param{i}"
+        if param_key not in d:
+            break
+        params.append(parse_param(d[param_key]))
+    return params
 
 
 @dataclass
@@ -14,20 +60,16 @@ class Skill:
     desc: str
     cd: float
     energy: float
-
-    def skill_escape(self, bd) -> str:
-        bd = bd.replace('\v', ' ')
-        bd, _ = re.subn(r'##([^#]+)#[^#]+#', lambda m: m.group(1), bd)
-        bd, _ = re.subn(r'<color=(#[^>]{3,8})>([^<]+)</color>',
-                        lambda m: f"{{{{color|{m.group(1)}|{m.group(2)}}}}}",
-                        bd)
-        bd, _ = re.subn(r"&Param\d+&", "<param>", bd)
-        return bd
+    params: list[list[str]]
 
     def __init__(self, d):
         self.name = d['Title']
-        self.brief_desc = self.skill_escape(d['BriefDesc'])
-        self.desc = self.skill_escape(d['Desc'])
+        try:
+            self.params = parse_params(d)
+        except Exception:
+            self.params = []
+        self.brief_desc = skill_escape(d['BriefDesc'])
+        self.desc = skill_escape(d['Desc'])
         self.cd = d.get('SkillCD', 0) / 10000.0
         self.energy = d.get('UltraEnergy', 0) / 10000.0
 
@@ -54,6 +96,7 @@ class CharSkills:
     ultimate: Skill
 
 
+@cache
 def get_skills() -> dict[str, CharSkills]:
     id_to_char = get_id_to_char()
     result = {}
@@ -113,6 +156,7 @@ def update_skills():
 
 
 def main():
+    get_skills()
     update_skills()
 
 
