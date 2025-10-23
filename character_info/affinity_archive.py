@@ -31,7 +31,14 @@ def get_affinity_archives() -> dict[str, list[AffinityArchive]]:
             content = row['Content']
             content = content.replace("\n", "<br/>").replace("==PLAYER_NAME==", "<player name>")
             # FIXME: should be replaced with icons, but we don't know where they are for now
-            content = re.sub("<sprite[^>]+>", "", content)
+            filename = ""
+            if "acrchives_certified" in content:
+                filename = "certified"
+            if "acrchives_falsified" in content:
+                filename = "falsified"
+            if filename != "":
+                repl = f"[[File:Archive {filename}.png|30px|link=]]"
+                content = re.sub("<sprite[^>]+>", repl, content)
             lst.append(AffinityArchive(
                 id=row['Id'],
                 title=row['Title'],
