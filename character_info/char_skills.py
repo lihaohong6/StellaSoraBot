@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from functools import cache
 
 from wikitextparser import parse, Template
 
@@ -23,7 +24,7 @@ def parse_param(param: str) -> list[int] | int:
     file_name = segments[0]
     data = load_json(file_name)
     param_id = segments[2]
-    row: dict = data.get(str(param_id), None)
+    row: dict | None = data.get(str(param_id), None)
     if row is not None and "SkillPercentAmend" in row:
         return row["SkillPercentAmend"]
     if file_name == "Effect":
@@ -39,9 +40,13 @@ def parse_param(param: str) -> list[int] | int:
         assert segments[1] == "NoLevel"
         return row['EffectTypeParam1']
     if file_name == "BuffValue":
+        assert row["Time"] > 0
+        print(row['Time'])
         return row["Time"] / 10000
-    return 0
-    raise RuntimeError(f"Could not parse param {param}")
+    if file_name == "Buff":
+        load_json("HitDamage")
+
+    raise RuntimeError(f"Could not find matching file for param {param}")
 
 
 def parse_params(d: dict) -> list[list[str]]:
@@ -50,7 +55,12 @@ def parse_params(d: dict) -> list[list[str]]:
         param_key = f"Param{i}"
         if param_key not in d:
             break
-        params.append(parse_param(d[param_key]))
+        try:
+            param = parse_param(d[param_key])
+        except RuntimeError as e:
+            print(e)
+            param = [-1]
+        params.append(param)
     return params
 
 
@@ -149,8 +159,8 @@ def update_skills():
 
 
 def main():
-    get_skills()
-    update_skills()
+    for v in get_skills().values():
+        print(v)
 
 
 if __name__ == "__main__":
