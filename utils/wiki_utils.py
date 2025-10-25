@@ -14,6 +14,13 @@ def find_section(wikitext: WikiText, title: str) -> Section | None:
             return sec
     return None
 
+
+def set_section_content(wikitext: WikiText, title: str, content: str) -> None:
+    section = find_section(wikitext, title)
+    assert section is not None
+    section.contents = content + "\n"
+
+
 def force_section_text(wikitext: WikiText, section_title: str, text: str, prepend: str = None) -> bool:
     for sec in wikitext.sections:
         if not sec.title:

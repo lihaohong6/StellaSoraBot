@@ -1,4 +1,3 @@
-import re
 from dataclasses import dataclass
 from functools import cache
 
@@ -6,17 +5,8 @@ from wikitextparser import parse, Template
 
 from character_info.characters import get_id_to_char, get_character_pages
 from utils.data_utils import autoload, load_json
+from utils.skill_utils import skill_escape
 from utils.wiki_utils import force_section_text
-
-
-def skill_escape(bd) -> str:
-    bd = bd.replace('\v', ' ')
-    bd, _ = re.subn(r'##([^#]+)#[^#]+#', lambda m: m.group(1), bd)
-    bd, _ = re.subn(r'<color=(#[^>]{3,8})>([^<]+)</color>',
-                    lambda m: f"{{{{color|{m.group(1)}|{m.group(2)}}}}}",
-                    bd)
-    bd, _ = re.subn(r"&Param\d+&", "<param>", bd)
-    return bd
 
 
 def parse_param(param: str) -> list[int] | int:

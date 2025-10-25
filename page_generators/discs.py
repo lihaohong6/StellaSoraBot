@@ -5,11 +5,58 @@ from pathlib import Path
 
 from pywikibot import Page
 from pywikibot.pagegenerators import PreloadingGenerator
-from wikitextparser import parse
+from wikitextparser import parse, Template
 
 from utils.data_utils import autoload, load_json, assets_root
+from utils.skill_utils import skill_escape
 from utils.upload_utils import UploadRequest, process_uploads
-from utils.wiki_utils import s, find_template_by_name, set_arg, save_page, find_section
+from utils.wiki_utils import s, find_template_by_name, set_arg, save_page, find_section, set_section_content
+
+
+@dataclass
+class DiscSkill:
+    id: int
+    name: str
+    descriptions: list[str]
+
+@cache
+def parse_disc_skills(filename: str) -> dict[int, DiscSkill]:
+    disc_skills = autoload(filename)
+    result: dict[int, list[tuple[str, str]]] = {}
+    for skill in disc_skills.values():
+        group = skill.get('GroupId', None)
+        if group is None:
+            continue
+        name = skill['Name']
+        desc = skill['Desc']
+        desc = skill_escape(desc)
+        for i in range(1, 100):
+            key = f"Param{i}"
+            if key not in skill:
+                break
+            desc = desc.replace("{" + str(i) + "}", str(skill[key]))
+        if group not in result:
+            result[group] = []
+        result[group].append((name, desc))
+    return dict((k, DiscSkill(id=k, name=v[0][0], descriptions=[r[1] for r in v]))
+                for k, v in result.items())
+
+@cache
+def get_main_disc_skills() -> dict[int, DiscSkill]:
+    return parse_disc_skills("MainSkill")
+
+
+@cache
+def get_secondary_disc_skills() -> dict[int, DiscSkill]:
+    return parse_disc_skills("SecondarySkill")
+
+
+def get_disc_main_skill(skill_group_id: int) -> DiscSkill:
+    return get_main_disc_skills()[skill_group_id]
+
+
+def get_disc_secondary_skill(skill_group_id: int) -> DiscSkill | None:
+    return get_secondary_disc_skills().get(skill_group_id, None)
 
 
 @dataclass
@@ -20,6 +67,8 @@ class Disc:
     lines_short: str = None
     story: str = None
     disc_bg: str = None
+    main_skill: DiscSkill = None
+    secondary_skill: DiscSkill | None = None
 
     @property
     def image_path(self) -> Path:
@@ -55,6 +104,8 @@ def get_disks() -> dict[int, Disc]:
         disc.rarity = 6 - item['Rarity']
         disc.story = disc_ip['StoryDesc']
         disc.disc_bg = v['DiscBg'].split("/")[-1]
+        disc.main_skill = get_disc_main_skill(v['MainSkillGroupId'])
+        disc.secondary_skill = get_disc_secondary_skill(v.get('SecondarySkillGroupId1', 0))
         result[int(k)] = disc
     return result
 
@@ -106,6 +157,28 @@ def save_disc_story():
         save_page(p, str(parsed), "update disc story")
 
 
+def save_disk_skills():
+    for disc, p in get_disc_pages():
+        parsed = parse(p.text)
+
+        def set_template_skill(t: Template, skill: DiscSkill):
+            set_arg(t, "skill_name", skill.name)
+            set_arg(t, "rarity", disc.rarity)
+            for i in range(1, len(skill.descriptions) + 1):
+                set_arg(t, f"skill_desc_{i}", skill.descriptions[i - 1])
+
+        t = Template("{{DiscMelodySkill\n}}")
+        set_template_skill(t, disc.main_skill)
+        set_section_content(parsed, "Melody Skill", str(t))
+
+        if disc.secondary_skill:
+            t = Template("{{DiscHarmonySkill\n}}")
+            set_template_skill(t, disc.secondary_skill)
+            set_section_content(parsed, "Harmony Skill", str(t))
+
+        save_page(p, str(parsed), "update disk skills")
+
+
 def create_disc_pages():
     for disc, p in get_disc_pages():
         if p.exists():
@@ -127,7 +200,7 @@ def create_disc_pages():
         p.save(summary="batch create disc pages")
 
 def main():
-    save_disc_story()
+    save_disk_skills()
 
 if __name__ == '__main__':
     main()
