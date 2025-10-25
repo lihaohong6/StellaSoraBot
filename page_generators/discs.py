@@ -12,17 +12,52 @@ from utils.skill_utils import skill_escape
 from utils.upload_utils import UploadRequest, process_uploads
 from utils.wiki_utils import s, find_template_by_name, set_arg, save_page, find_section, set_section_content
 
+disc_icon_root = assets_root / "icon" / "discskill"
 
 @dataclass
 class DiscSkill:
     id: int
     name: str
     descriptions: list[str]
+    icon: int = None
+    icon_bg: int = None
+
+    @property
+    def icon_path(self) -> Path:
+        return disc_icon_root / f"discskill_{self.icon}.png"
+
+    @property
+    def icon_name(self) -> str:
+        return f"{self.icon}"
+
+    @property
+    def icon_page(self) -> str:
+        return f"Discskill-icon-{self.icon}.png"
+
+    @property
+    def icon_bg_name(self) -> str:
+        color = {
+            1: "red",
+            2: "blue2",
+            3: "green",
+            4: "cyan",
+            5: "blue",
+            6: "purple"
+        }[self.icon_bg]
+        return f"{color}-sq"
+
+
+def parse_disc_skill_icons(v: dict) -> tuple[int, int]:
+    icon = int(v['Icon'].split("_")[-1])
+    icon_bg = int(v['IconBg'].split("_")[-1])
+    return icon, icon_bg
+
 
 @cache
 def parse_disc_skills(filename: str) -> dict[int, DiscSkill]:
     disc_skills = autoload(filename)
     result: dict[int, list[tuple[str, str]]] = {}
+    group_icon: dict[int, tuple[int, int]] = {}
     for skill in disc_skills.values():
         group = skill.get('GroupId', None)
         if group is None:
@@ -35,11 +70,17 @@ def parse_disc_skills(filename: str) -> dict[int, DiscSkill]:
             if key not in skill:
                 break
             desc = desc.replace("{" + str(i) + "}", str(skill[key]))
+        group_icon[group] = parse_disc_skill_icons(skill)
         if group not in result:
             result[group] = []
         result[group].append((name, desc))
-    return dict((k, DiscSkill(id=k, name=v[0][0], descriptions=[r[1] for r in v]))
+    return dict((k, DiscSkill(id=k,
+                              name=v[0][0],
+                              descriptions=[r[1] for r in v],
+                              icon=group_icon[k][0],
+                              icon_bg=group_icon[k][1]))
                 for k, v in result.items())
+
 
 @cache
 def get_main_disc_skills() -> dict[int, DiscSkill]:
@@ -166,6 +207,7 @@ def save_disk_skills():
             set_arg(t, "rarity", disc.rarity)
             for i in range(1, len(skill.descriptions) + 1):
                 set_arg(t, f"skill_desc_{i}", skill.descriptions[i - 1])
+            set_arg(t, "skillicon", f"{{{{DiscSkillIcon|bgicon={skill.icon_bg_name}|fgicon={skill.icon_name}}}}}")
 
         t = Template("{{DiscMelodySkill\n}}")
         set_template_skill(t, disc.main_skill)
@@ -177,6 +219,24 @@ def save_disk_skills():
             set_section_content(parsed, "Harmony Skill", str(t))
 
         save_page(p, str(parsed), "update disk skills")
+
+
+def upload_disc_skill_icons():
+    upload_requests = []
+    for disc in get_disks().values():
+        upload_requests.append(UploadRequest(
+            disc.main_skill.icon_path,
+            disc.main_skill.icon_page,
+            "[[Category:Disc skill icons]]")
+        )
+        if disc.secondary_skill:
+            upload_requests.append(UploadRequest(
+                disc.secondary_skill.icon_path,
+                disc.secondary_skill.icon_page,
+                "[[Category:Disc skill icons]]",
+                "batch upload disc skill icons"
+            ))
+    process_uploads(upload_requests)
 
 
 def create_disc_pages():
@@ -199,8 +259,13 @@ def create_disc_pages():
 {{{{DiscsList}}}}"""
         p.save(summary="batch create disc pages")
 
+
 def main():
+    upload_disc_skill_icons()
+    save_disc_infobox()
     save_disk_skills()
+    save_disc_story()
+
 
 if __name__ == '__main__':
     main()
