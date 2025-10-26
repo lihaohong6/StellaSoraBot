@@ -54,6 +54,15 @@ def autoload(name: str, postprocessor: Callable[[str], str] = string_postprocess
     return data
 
 
+def data_to_dict(v: dict[str, Any], attrs: list[str]) -> dict[str, Any]:
+    result = {}
+    for attr in attrs:
+        key = "".join(s.capitalize() for s in attr.split("_"))
+        assert key in v
+        result[attr] = v[key]
+    return result
+
+
 def main():
     out_dir = assets_root.parent / "data"
     out_dir.mkdir(parents=True, exist_ok=True)

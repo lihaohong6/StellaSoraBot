@@ -84,7 +84,7 @@ def parse_params(d: dict, max_params: int) -> list[list[str]]:
             break
         try:
             param = parse_param(d[param_key])
-        except RuntimeError as e:
+        except Exception as e:
             print(d['Id'])
             print(e)
             param = -1
