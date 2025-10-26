@@ -10,6 +10,8 @@ class Word:
     id: int
     name: str
     color: str
+    desc: str
+    icon: str
 
 
 @cache
@@ -17,7 +19,18 @@ def get_words() -> dict[int, Word]:
     words = autoload("Word")
     result: dict[int, Word] = {}
     for w in words.values():
-        result[w['Id']] = Word(w['Id'], w['Title'], '#' + w['Color'])
+        m = re.search(r"_([^_]+)1_", w.get('TitleIcon', ""))
+        if m is None:
+            icon = ""
+        else:
+            icon = m.group(1).lower()
+        result[w['Id']] = Word(
+            w['Id'],
+            w['Title'],
+            '#' + w['Color'],
+            w['Desc'],
+            icon
+        )
     return result
 
 
@@ -43,10 +56,10 @@ def skill_escape_word(o: str) -> str:
 
     def get_word(m: re.Match) -> str:
         word = m.group(1)
-        word_id = m.group(2)
+        word_id = int(m.group(2))
         if word_id in words:
-            word = words[int(word_id)]
-            return "{{color|" + word.color + "|" + word.name + "}}"
+            word = words[word_id]
+            return "{{word|" + word.name + "|" + word.icon + "}}"
         return word
 
     o, _ = re.subn(r'##([^#]+)#([^#]+)#', get_word, o)
