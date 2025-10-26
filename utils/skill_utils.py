@@ -21,6 +21,23 @@ def get_words() -> dict[int, Word]:
     return result
 
 
+@dataclass
+class Effect:
+    id: int
+    type1: int
+    type2: int
+    desc: str
+
+
+@cache
+def get_effects() -> list[Effect]:
+    data = autoload("EffectDesc")
+    result = []
+    for k, v in data.items():
+        result.append(Effect(v['Id'], v.get('TypeID', -1), v.get('Type2ID', -1), v['Desc']))
+    return result
+
+
 def skill_escape_word(o: str) -> str:
     words = get_words()
 

@@ -1,8 +1,8 @@
-StellaSoraData/
-.idea/
+/StellaSoraData
+/.idea
 *.ctrl
 *.lwp
 user-passwords.py
-apicache/
-/__pycache__
-assets/
+/apicache
+__pycache__/
+/assets
