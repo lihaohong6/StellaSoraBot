@@ -21,6 +21,7 @@ def update_infobox():
             ("experience", char.experience),
             ("weapon", char.weapon),
             ("rate", char.rate),
+            ("element", char.element.name.capitalize()),
         ]
         for arg, value in pairs:
             for link in auto_link:

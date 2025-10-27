@@ -7,6 +7,7 @@ from pywikibot import Page
 from pywikibot.pagegenerators import PreloadingGenerator
 from wikitextparser import parse, Template
 
+from character_info.characters import ElementType
 from utils.data_utils import autoload, load_json, assets_root
 from utils.skill_utils import skill_escape
 from utils.upload_utils import UploadRequest, process_uploads
@@ -110,6 +111,7 @@ class Disc:
     disc_bg: str = None
     main_skill: DiscSkill = None
     secondary_skill: DiscSkill | None = None
+    element: ElementType = None
 
     @property
     def image_path(self) -> Path:
@@ -147,6 +149,7 @@ def get_disks() -> dict[int, Disc]:
         disc.disc_bg = v['DiscBg'].split("/")[-1]
         disc.main_skill = get_disc_main_skill(v['MainSkillGroupId'])
         disc.secondary_skill = get_disc_secondary_skill(v.get('SecondarySkillGroupId1', 0))
+        disc.element = ElementType(v['EET'])
         result[int(k)] = disc
     return result
 
@@ -178,6 +181,7 @@ def save_disc_infobox():
         set_arg(t, "rarity", disc.rarity)
         set_arg(t, "image_artwork", disc.image_file)
         set_arg(t, "image_icon", disc.icon_file)
+        set_arg(t, "element", disc.element.name.capitalize())
         text = str(parsed)
         text = re.sub(r"\d-star", f"{disc.rarity}-star", text)
         save_page(p, text, "update infobox")

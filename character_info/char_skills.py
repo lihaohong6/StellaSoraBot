@@ -1,11 +1,14 @@
+import re
 from dataclasses import dataclass
 from functools import cache
+from pathlib import Path
 
 from wikitextparser import parse, Template
 
-from character_info.characters import get_id_to_char, get_character_pages
-from utils.data_utils import autoload, load_json
+from character_info.characters import get_id_to_char, get_character_pages, ElementType, common_name_to_element_type
+from utils.data_utils import autoload, load_json, data_root, assets_root
 from utils.skill_utils import skill_escape, get_effects
+from utils.upload_utils import UploadRequest, process_uploads
 from utils.wiki_utils import force_section_text, set_arg, save_page
 
 
@@ -100,7 +103,15 @@ class Skill:
     desc: str
     cd: float
     energy: float
+    icon: str
     params: list[list[str]]
+
+    def icon_path(self) -> Path:
+        p = assets_root / "icon/skill"
+        return p / f"{self.icon.lower()}.png"
+
+    def icon_page(self) -> str:
+        return f"{self.icon}.png"
 
     def __init__(self, d):
         self.id = d["Id"]
@@ -109,6 +120,7 @@ class Skill:
         self.desc = skill_escape(d['Desc'])
         self.cd = d.get('SkillCD', 0) / 10000.0
         self.energy = d.get('UltraEnergy', 0) / 10000.0
+        self.icon = d['Icon'].split("/")[-1]
         max_params = 0
         for i in range(1, 100):
             if "{" + str(i) + "}" in self.desc:
@@ -129,7 +141,6 @@ class Skill:
                     desc = desc.replace(search_string, str(param[level]))
             result.append(desc)
         return result
-
 
     def to_template(self) -> Template:
         t = Template("{{TrekkerSkill\n}}")
@@ -154,6 +165,21 @@ class CharSkills:
     main: Skill
     support: Skill
     ultimate: Skill
+
+    @property
+    def skill_list(self) -> list[Skill]:
+        return [self.attack, self.main, self.support, self.ultimate]
+
+    @property
+    def element(self) -> ElementType:
+        groups = []
+        for skill in self.skill_list:
+            groups.extend(re.findall(r"\{\{word\|[^|]+\|([^}]*)}", skill.desc))
+        groups = set(groups)
+        if "" in groups:
+            groups.remove("")
+        assert len(groups) == 1
+        return common_name_to_element_type(groups.pop())
 
 
 @cache
@@ -189,12 +215,17 @@ def update_skills():
         if skills is None:
             continue
         result = []
-        for k, v in [(skills.attack, "auto"),
+        for skill, skill_type in [(skills.attack, "auto"),
                      (skills.main, "main"),
                      (skills.support, "support"),
                      (skills.ultimate, "ultimate")]:
-            t = k.to_template()
-            t.set_arg(" type ", " " + v + "\n")
+            t = skill.to_template()
+            set_arg(t, "type", skill_type)
+            icon_template = Template("{{TrekkerSkillIcon}}")
+            icon_template.set_arg("element", skills.element.name)
+            icon_template.set_arg("icon", skill.icon_page().replace(".png", ""))
+            icon_template.set_arg("type", skill_type)
+            set_arg(t, "icon", str(icon_template))
             result.append(str(t))
 
         parsed = parse(page.text)
@@ -206,7 +237,23 @@ def update_skills():
         save_page(page, str(parsed), summary="Generate character skills")
 
 
+def upload_skill_icons():
+    upload_requests = []
+    for k, v in get_skills().items():
+        for skill in v.skill_list:
+            p = skill.icon_path()
+            if not p.exists():
+                continue
+            upload_requests.append(UploadRequest(
+                skill.icon_path(),
+                skill.icon_page(),
+                "[[Category:Skill icons]]",
+            ))
+    process_uploads(upload_requests)
+
+
 def main():
+    upload_skill_icons()
     update_skills()
 
 

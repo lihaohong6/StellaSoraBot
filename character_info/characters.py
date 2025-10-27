@@ -1,11 +1,47 @@
 from dataclasses import dataclass
+from enum import Enum
 from functools import cache
 
 from pywikibot import Page
 from pywikibot.pagegenerators import PreloadingGenerator
 
-from utils.data_utils import load_json_pair, autoload
+from utils.data_utils import autoload, load_json
 from utils.wiki_utils import s
+
+
+class ElementType(Enum):
+    aqua = 1
+    ignis = 2
+    terra = 3
+    ventus = 4
+    lux = 5
+    umbra = 6
+    neutral = 7
+
+
+def common_name_to_element_type(name: str) -> ElementType:
+    return {
+        "fire": ElementType.ignis,
+        "wind": ElementType.ventus,
+        "light": ElementType.lux,
+        "earth": ElementType.terra,
+        "dark": ElementType.umbra,
+        "water": ElementType.aqua,
+    }[name]
+
+
+@cache
+def get_char_element_type(char_id: int) -> ElementType:
+    data = load_json("HitDamage")
+    element_type: list[int] = []
+    for k, v in data.items():
+        if k.startswith(str(char_id)):
+            if "ElementType" in v:
+                element_type.append(v['ElementType'])
+    if len(element_type) == 0:
+        return None
+    # assert all(t == element_type[0] for t in element_type)
+    return ElementType(element_type[0])
 
 
 @dataclass
@@ -19,6 +55,7 @@ class Character:
     weapon: str = None
     address: str = None
     affiliation: str = None
+    element: ElementType = None
 
 
 @cache
@@ -41,7 +78,8 @@ def get_characters() -> dict[str, Character]:
         for attr, num in pairs:
             value = base_info.get(f"{c.id}{num}", {}).get('Content', None)
             if value:
-               setattr(c, attr, value)
+                setattr(c, attr, value)
+        c.element = ElementType(v['EET'])
         result[name] = c
     return result
 
@@ -59,3 +97,12 @@ def get_character_pages() -> dict[str, Page]:
 def get_id_to_char() -> dict[int, Character]:
     chars = get_characters()
     return dict((c.id, c) for c in chars.values())
+
+
+def main():
+    for k, v in get_characters().items():
+        print(v)
+
+
+if __name__ == "__main__":
+    main()
