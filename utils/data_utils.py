@@ -4,11 +4,16 @@ from pathlib import Path
 from typing import Any, Callable
 
 data_root = Path("StellaSoraData")
+jp_root = data_root / "JP"
 en_root = data_root / "EN"
 json_root = en_root / "bin"
 strings_root = en_root / "language/en_US"
 
 assets_root = Path("assets") / "assetbundles"
+audio_wav_root = Path("assets/audio")
+
+temp_dir = Path("/tmp/stellasorabot")
+temp_dir.mkdir(parents=True, exist_ok=True)
 
 assert en_root.exists()
 assert json_root.exists()

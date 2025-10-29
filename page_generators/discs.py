@@ -266,6 +266,8 @@ def create_disc_pages():
 
 def main():
     upload_disc_skill_icons()
+    upload_disc_images()
+    create_disc_pages()
     save_disc_infobox()
     save_disk_skills()
     save_disc_story()
