@@ -1,6 +1,7 @@
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from pywikibot import FilePage
 from pywikibot.pagegenerators import PreloadingGenerator
@@ -10,13 +11,15 @@ from utils.wiki_utils import s
 
 
 def upload_file(text: str, target: FilePage, summary: str = "batch upload file",
-                file: str | Path = None, url: str = None, force: bool = False,
+                file: str | Path | Callable[[], Path] = None, url: str = None, force: bool = False,
                 ignore_dup: bool = False, redirect_dup: bool = False, move_dup: bool = True):
     while True:
         try:
             if url is not None:
                 Uploader(s, target, source_url=url, text=text, comment=summary, ignore_warnings=force).upload()
             if file is not None:
+                if callable(file):
+                    file = file()
                 Uploader(s, target, source_filename=str(file), text=text, comment=summary,
                          ignore_warnings=force).upload()
             return
@@ -49,10 +52,10 @@ def upload_file(text: str, target: FilePage, summary: str = "batch upload file",
 
 @dataclass
 class UploadRequest:
-    source: Path | str | FilePage
+    source: Path | str | FilePage | Callable[[], Path]
     target: FilePage | str
     text: str
-    comment: str = "batch upload file"
+    summary: str = "batch upload file"
 
 
 def process_uploads(requests: list[UploadRequest], force: bool = False, **kwargs) -> None:
@@ -65,13 +68,13 @@ def process_uploads(requests: list[UploadRequest], force: bool = False, **kwargs
     for r in requests:
         if r.target.title() in existing:
             continue
-        upload_args = [r.text, r.target, r.comment]
+        upload_args = [r.text, r.target, r.summary]
         url = None
         file = None
         if isinstance(r.source, str):
             url = r.source
         elif isinstance(r.source, FilePage):
             url = r.source.get_file_url()
-        elif isinstance(r.source, Path):
+        elif isinstance(r.source, Path) or callable(r.source):
             file = r.source
         upload_file(*upload_args, url=url, file=file, force=force, **kwargs)
