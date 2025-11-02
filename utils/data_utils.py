@@ -69,7 +69,7 @@ def data_to_dict(v: dict[str, Any], attrs: list[str]) -> dict[str, Any]:
 
 
 def main():
-    out_dir = assets_root.parent / "data"
+    out_dir = assets_root.parent / "autoload"
     out_dir.mkdir(parents=True, exist_ok=True)
     for f in json_root.glob("*.json"):
         data = autoload(f.name.split(".")[0])
