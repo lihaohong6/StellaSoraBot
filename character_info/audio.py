@@ -82,27 +82,23 @@ def wav_to_ogg(wav_path: Path, ogg_path: Path) -> Path:
     return ogg_path
 
 
-def upload_audio_files() -> None:
+def upload_audio_files(char_name: str, audio_lines: list[AudioLine]) -> None:
     upload_requests = []
-    for k, audio_lines in get_audio().items():
-        if not should_process_char_audio(k):
-            continue
-        char_name = get_id_to_char()[k].name
-        for audio_line in audio_lines:
-            for lang in ["jp", "cn"]:
-                filename = f"{audio_line.source}_{lang}"
-                source = audio_wav_root / f"{filename}.wav"
-                if not source.exists():
-                    continue
-                temp = temp_dir / f"{filename}.ogg"
-                wav_to_ogg(source, temp)
-                target_page = audio_line.file_page(lang)
-                upload_requests.append(UploadRequest(
-                    source=temp,
-                    target=target_page,
-                    text=f"[[Category:{char_name} voice lines]]",
-                    summary="upload voice lines"
-                ))
+    for audio_line in audio_lines:
+        for lang in ["jp", "cn"]:
+            filename = f"{audio_line.source}_{lang}"
+            source = audio_wav_root / f"{filename}.wav"
+            if not source.exists():
+                continue
+            temp = temp_dir / f"{filename}.ogg"
+            wav_to_ogg(source, temp)
+            target_page = audio_line.file_page(lang)
+            upload_requests.append(UploadRequest(
+                source=temp,
+                target=target_page,
+                text=f"[[Category:{char_name} voice lines]]",
+                summary="upload voice lines"
+            ))
     process_uploads(upload_requests, force=True)
 
 
@@ -131,7 +127,10 @@ def generate_audio_page():
         if not should_process_char_audio(char_name):
             continue
         char = chars[char_name]
+        if char.id not in audio:
+            continue
         lines = audio[char.id]
+        upload_audio_files(char_name, lines)
         result = ["{{TrekkerAudioTop}}",
                   "",
                   "==Daily Voice Chat==",
@@ -146,8 +145,8 @@ def generate_audio_page():
 
 def should_process_char_audio(char: str | int) -> bool:
     # Change the allow list to permit only a subset of character audio pages to be updated
-    allow_list = [get_characters()['Shia']]
-    # allow_list = list(get_characters().values())
+    # allow_list = [get_characters()['Shia']]
+    allow_list = list(get_characters().values())
     allowed_names = set(c.name for c in allow_list)
     allowed_ids = set(c.id for c in allow_list)
     if char in allowed_names:
@@ -158,7 +157,6 @@ def should_process_char_audio(char: str | int) -> bool:
 
 
 def main():
-    upload_audio_files()
     generate_audio_page()
 
 
