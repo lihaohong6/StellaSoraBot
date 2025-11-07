@@ -5,6 +5,7 @@ from typing import Any, Callable
 
 data_root = Path("StellaSoraData")
 jp_root = data_root / "JP"
+cn_root = data_root / "CN"
 en_root = data_root / "EN"
 json_root = en_root / "bin"
 strings_root = en_root / "language/en_US"
