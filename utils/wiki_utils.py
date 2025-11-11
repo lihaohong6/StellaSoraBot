@@ -29,7 +29,7 @@ def force_section_text(wikitext: WikiText, section_title: str, text: str, prepen
             sec.string = f"=={section_title}==\n" + text + "\n" + sec.string
             return True
         if sec.title.strip() == section_title:
-            sec.contents = text + "\n"
+            sec.string = f"=={section_title}==\n" + text + "\n"
             return True
     return False
 
