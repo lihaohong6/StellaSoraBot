@@ -23,14 +23,13 @@ def get_affinity_archives() -> dict[str, list[AffinityArchive]]:
     data = autoload("CharacterArchiveContent")
     for name, char in chars.items():
         lst = []
-        for i in range(3, 11):  # 14
+        for i in range(3, 14):
             key = f"{char.id}{i:02}"
             if key not in data:
                 break
             row = data[key]
             content = row['Content']
             content = content.replace("\n", "<br/>").replace("==PLAYER_NAME==", "<player name>")
-            # FIXME: should be replaced with icons, but we don't know where they are for now
             filename = ""
             if "acrchives_certified" in content:
                 filename = "certified"
@@ -49,25 +48,39 @@ def get_affinity_archives() -> dict[str, list[AffinityArchive]]:
     return result
 
 
-def story_to_tabs(stories: list[AffinityArchive]):
-    result = ["<tabber>"]
+def affinity_archive_sections(stories: list[AffinityArchive]) -> str:
+    result = []
     for story in stories:
-        result.append(f"|-|{story.title}=")
+        result.append(f"==={story.title}===")
         result.append(story.content)
-    result.append("</tabber>")
     return "\n".join(result)
 
 
 def save_affinity_archives():
     affinity_archives = get_affinity_archives()
-    for char_name, page in get_character_pages().items():
+    for char_name, page in get_story_pages().items():
         parsed = parse(page.text)
-        text = story_to_tabs(affinity_archives[char_name])
-        force_section_text(parsed, "Story", text, "Gallery")
+        text = affinity_archive_sections(affinity_archives[char_name])
+        force_section_text(parsed, "Affinity archives", text)
         save_page(page, str(parsed), "update character story in affinity archive")
 
 
+def get_story_pages():
+    return get_character_pages(suffix="/story", must_exist=False)
+
+
+def create_story_pages():
+    for char_name, page in get_story_pages().items():
+        if not page.exists():
+            page.text = """{{StoryTop}}
+==Affinity archives==
+==Invitation stories==
+"""
+            page.save("batch create story pages")
+
+
 def main():
+    create_story_pages()
     save_affinity_archives()
 
 
