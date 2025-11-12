@@ -53,9 +53,9 @@ def get_affinity_archives() -> dict[str, list[AffinityArchive]]:
 @dataclass
 class InvitationStory:
     id: int
-    branch_tag: int
     name: str
     clue: str
+    option: str
     memory: str
     desc: str
 
@@ -66,6 +66,31 @@ class InvitationStory:
     @property
     def file_path(self) -> Path:
         return assets_root / "icon" / "datingeventcg" / f"datingspcg_{self.id}.png"
+
+
+@dataclass
+class Landmark:
+    id: int
+    name: str
+
+
+@cache
+def get_landmarks() -> dict[str, Landmark]:
+    data = autoload("DatingLandmark")
+    result: dict[str, Landmark] = {}
+    for k, v in data.items():
+        name = v['Name'].replace("The ", "")
+        result[name] = Landmark(int(k), v)
+    return result
+
+
+def get_landmark_option(landmark: str, branch: int):
+    data = autoload("DatingBranch")
+    landmarks = get_landmarks()
+    assert landmark in landmarks
+    key = str(landmarks[landmark].id * 1000 + 1)
+    assert key in data
+    return data[key].get(f"Option{branch}")
 
 
 def get_invitation_stories() -> dict[str, list[InvitationStory]]:
@@ -79,12 +104,18 @@ def get_invitation_stories() -> dict[str, list[InvitationStory]]:
             continue
         char = chars[char_id]
         desc = "\n\n".join(v[f"Desc{i}"] for i in range(1, 10) if f"Desc{i}" in v)
+        clue = v['Clue']
+        landmark = re.search(r"the (.*) to unlock", clue)
+        assert landmark is not None
+        landmark = landmark.group(1)
+        branch = v['BranchTag']
+        option = get_landmark_option(landmark, branch)
         result[char.name] = result.get(char.name, [])
         result[char.name].append(InvitationStory(
             id=event_id,
-            branch_tag=v['BranchTag'],
             name=v['Name'],
-            clue=v['Clue'],
+            clue=clue,
+            option=option,
             memory=v['Memory'],
             desc=desc,
         ))
@@ -120,6 +151,7 @@ def invitation_story_sections(stories: list[InvitationStory]) -> str:
         template = Template("{{InvitationStory\n}}")
         set_arg(template, "file", story.file_page)
         set_arg(template, "clue", story.clue)
+        set_arg(template, "option", story.option)
         set_arg(template, "memory", story.memory)
         set_arg(template, "desc", story.desc)
         result.append(str(template))
