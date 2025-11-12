@@ -6,3 +6,4 @@ user-passwords.py
 /apicache
 __pycache__/
 /assets
+sandbox.py

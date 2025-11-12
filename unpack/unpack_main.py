@@ -14,10 +14,8 @@ assert data_dir.exists() and image_dir.exists() and text_dir.exists()
 
 
 def export_images():
-    for f in list(image_dir_2.iterdir()):
+    for f in list(image_dir.rglob("*.unity3d")) + list(image_dir_2.rglob("*.unity3d")):
         if not f.is_file():
-            continue
-        if not f.name.endswith("unity3d"):
             continue
         env = UnityPy.load(str(f))
 
