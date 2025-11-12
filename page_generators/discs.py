@@ -1,5 +1,6 @@
+import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
 
@@ -15,13 +16,15 @@ from utils.wiki_utils import s, find_template_by_name, set_arg, save_page, find_
 
 disc_icon_root = assets_root / "icon" / "discskill"
 
+
 @dataclass
 class DiscSkill:
     id: int
     name: str
-    descriptions: list[str]
+    descriptions: list[str] = field(default_factory=list)
     icon: int = None
     icon_bg: int = None
+    unlock: list[list[tuple[str, int]]] = field(default_factory=list)
 
     @property
     def icon_path(self) -> Path:
@@ -48,39 +51,63 @@ class DiscSkill:
         return f"{color}-sq"
 
 
+@dataclass
+class Melody:
+    id: int
+    name: str
+
+
+@cache
+def get_melodies() -> dict[int, Melody]:
+    data = autoload("SubNoteSkill")
+    result: dict[int, Melody] = {}
+    for k, v in data.items():
+        k = int(k)
+        result[k] = Melody(k, v['Name'].split(" of ")[1])
+    return result
+
+
 def parse_disc_skill_icons(v: dict) -> tuple[int, int]:
     icon = int(v['Icon'].split("_")[-1])
     icon_bg = int(v['IconBg'].split("_")[-1])
     return icon, icon_bg
 
 
+def parse_disc_skill_lock(skill_string: str | None) -> list[tuple[str, int]]:
+    if skill_string is None:
+        return []
+    notes = get_melodies()
+    result: list[tuple[str, int]] = []
+    for k, quantity in json.loads(skill_string).items():
+        result.append((notes[int(k)].name, quantity))
+    return result
+
+
 @cache
 def parse_disc_skills(filename: str) -> dict[int, DiscSkill]:
     disc_skills = autoload(filename)
-    result: dict[int, list[tuple[str, str]]] = {}
-    group_icon: dict[int, tuple[int, int]] = {}
-    for skill in disc_skills.values():
-        group = skill.get('GroupId', None)
+    result: dict[int, DiscSkill] = {}
+    for v in disc_skills.values():
+        group = v.get('GroupId', None)
         if group is None:
             continue
-        name = skill['Name']
-        desc = skill['Desc']
+        name = v['Name']
+        desc = v['Desc']
         desc = skill_escape(desc)
         for i in range(1, 100):
             key = f"Param{i}"
-            if key not in skill:
+            if key not in v:
                 break
-            desc = desc.replace("{" + str(i) + "}", str(skill[key]))
-        group_icon[group] = parse_disc_skill_icons(skill)
+            desc = desc.replace("{" + str(i) + "}", str(v[key]))
         if group not in result:
-            result[group] = []
-        result[group].append((name, desc))
-    return dict((k, DiscSkill(id=k,
-                              name=v[0][0],
-                              descriptions=[r[1] for r in v],
-                              icon=group_icon[k][0],
-                              icon_bg=group_icon[k][1]))
-                for k, v in result.items())
+            result[group] = DiscSkill(group, name)
+        skill = result[group]
+        # Name must be consistent across ids unless this is a unlocalized field
+        assert name == skill.name or name.startswith("MainSkill.") or name.startswith("SecondarySkill.")
+        skill.descriptions.append(desc)
+        skill.icon, skill.icon_bg = parse_disc_skill_icons(v)
+        skill.unlock.append(parse_disc_skill_lock(v.get('NeedSubNoteSkills', None)))
+    return result
 
 
 @cache
@@ -110,7 +137,7 @@ class Disc:
     story: str = None
     disc_bg: str = None
     main_skill: DiscSkill = None
-    secondary_skill: DiscSkill | None = None
+    secondary_skills: list[DiscSkill] = field(default_factory=list)
     element: ElementType = None
 
     @property
@@ -148,7 +175,12 @@ def get_disks() -> dict[int, Disc]:
         disc.story = disc_ip['StoryDesc']
         disc.disc_bg = v['DiscBg'].split("/")[-1]
         disc.main_skill = get_disc_main_skill(v['MainSkillGroupId'])
-        disc.secondary_skill = get_disc_secondary_skill(v.get('SecondarySkillGroupId1', 0))
+        s1 = get_disc_secondary_skill(v.get('SecondarySkillGroupId1', 0))
+        if s1 is not None:
+            disc.secondary_skills.append(s1)
+            s2 = get_disc_secondary_skill(v.get('SecondarySkillGroupId2', 0))
+            if s2 is not None:
+                disc.secondary_skills.append(s2)
         disc.element = ElementType(v['EET'])
         result[int(k)] = disc
     return result
@@ -212,15 +244,24 @@ def save_disk_skills():
             for i in range(1, len(skill.descriptions) + 1):
                 set_arg(t, f"skill_desc_{i}", skill.descriptions[i - 1])
             set_arg(t, "skillicon", f"{{{{DiscSkillIcon|bgicon={skill.icon_bg_name}|fgicon={skill.icon_name}}}}}")
+            for i in range(1, len(skill.unlock) + 1):
+                unlock = " ".join("{{MelodyRequirement|" + name + "|" + str(quantity) + "}}" for name, quantity in skill.unlock[i - 1])
+                if unlock != "":
+                    set_arg(t, f"melody_{i}", unlock)
 
         t = Template("{{DiscMelodySkill\n}}")
         set_template_skill(t, disc.main_skill)
         set_section_content(parsed, "Melody Skill", str(t))
 
-        if disc.secondary_skill:
+        harmoney_skills = []
+        for secondary_skill in disc.secondary_skills:
             t = Template("{{DiscHarmonySkill\n}}")
-            set_template_skill(t, disc.secondary_skill)
-            set_section_content(parsed, "Harmony Skill", str(t))
+            set_template_skill(t, secondary_skill)
+            harmoney_skills.append(str(t))
+        text = "This disc does not have any harmoney skills."
+        if len(harmoney_skills) > 0:
+            text = "\n".join(harmoney_skills)
+        set_section_content(parsed, "Harmony Skill", text)
 
         save_page(p, str(parsed), "update disk skills")
 
@@ -233,10 +274,10 @@ def upload_disc_skill_icons():
             disc.main_skill.icon_page,
             "[[Category:Disc skill icons]]")
         )
-        if disc.secondary_skill:
+        for skill in disc.secondary_skills:
             upload_requests.append(UploadRequest(
-                disc.secondary_skill.icon_path,
-                disc.secondary_skill.icon_page,
+                skill.icon_path,
+                skill.icon_page,
                 "[[Category:Disc skill icons]]",
                 "batch upload disc skill icons"
             ))
