@@ -55,6 +55,7 @@ class InvitationStory:
     id: int
     name: str
     clue: str
+    landmark: str
     option: str
     memory: str
     desc: str
@@ -115,6 +116,7 @@ def get_invitation_stories() -> dict[str, list[InvitationStory]]:
             id=event_id,
             name=v['Name'],
             clue=clue,
+            landmark=landmark,
             option=option,
             memory=v['Memory'],
             desc=desc,
@@ -125,8 +127,7 @@ def get_invitation_stories() -> dict[str, list[InvitationStory]]:
 def affinity_archive_sections(stories: list[AffinityArchive]) -> str:
     result = []
     for story in stories:
-        result.append(f"==={story.title}===")
-        result.append(story.content)
+        result.append("{{Collapse|1=" + story.title + "|2=" + story.content + "}}\n")
     return "\n".join(result)
 
 
@@ -151,6 +152,7 @@ def invitation_story_sections(stories: list[InvitationStory]) -> str:
         template = Template("{{InvitationStory\n}}")
         set_arg(template, "file", story.file_page)
         set_arg(template, "clue", story.clue)
+        set_arg(template, "landmark", story.landmark)
         set_arg(template, "option", story.option)
         set_arg(template, "memory", story.memory)
         set_arg(template, "desc", story.desc)
