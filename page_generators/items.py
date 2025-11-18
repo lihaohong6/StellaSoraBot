@@ -63,7 +63,7 @@ def get_all_items() -> dict[int, Item]:
     return result
 
 
-def make_item_pages(ids: list[int]):
+def make_item_pages(ids: list[int], overwrite: bool = False) -> None:
     items = get_all_items()
     upload_requests = []
     for item_id in ids:
@@ -71,6 +71,8 @@ def make_item_pages(ids: list[int]):
         t = make_item_page_template(item)
         text = str(t) + "\n\n" + f"'''{item.title}''' is an item in [[Stella Sora]]."
         p = Page(s, item.title)
+        if not overwrite and p.exists():
+            continue
         save_page(p, text, "batch create item pages")
         upload_requests.append(UploadRequest(
             item.file_path(),
@@ -81,7 +83,7 @@ def make_item_pages(ids: list[int]):
 
 
 def main():
-    make_item_pages([20081, 20082, 20083, 20071, 20072, 20073, 20091, 20092, 20093])
+    make_item_pages([])
 
 
 if __name__ == '__main__':

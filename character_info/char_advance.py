@@ -16,14 +16,17 @@ class AdvanceMaterial:
 
 
 @cache
-def get_char_advance_material() -> dict[int, list[AdvanceMaterial]]:
-    data = autoload("CharacterAdvance")
+def get_advancement_material(file: str) -> dict[int, list[AdvanceMaterial]]:
+    data = autoload(file)
     result: dict[int, list[AdvanceMaterial]] = {}
     for k, v in data.items():
         char = v['Group']
         if char not in result:
             result[char] = []
-        material = AdvanceMaterial(v['GoldQty'])
+        gold = v.get('GoldQty', None)
+        if gold is None:
+            continue
+        material = AdvanceMaterial(gold)
         for index in range(1, 10):
             item_id = v.get(f"Tid{index}", None)
             if item_id is None:
@@ -34,20 +37,28 @@ def get_char_advance_material() -> dict[int, list[AdvanceMaterial]]:
     return result
 
 
-def update_character_advancement_material():
-    chars = get_characters()
-    for char_name, page in get_character_pages().items():
-        char = chars[char_name]
-        parsed = parse(page.text)
-        t = make_character_advancement_template(char)
-        force_section_text(parsed, "Upgrade materials", str(t), "Gallery")
-        save_page(page, str(parsed), "update character upgrade material")
+def get_char_advance_material() -> dict[int, list[AdvanceMaterial]]:
+    return get_advancement_material("CharacterAdvance")
+
+
+def get_char_skill_material() -> dict[int, list[AdvanceMaterial]]:
+    return get_advancement_material("CharacterSkillUpgrade")
+
+
+def make_character_skill_advancement_template(char: Character) -> Template:
+    material_list = get_char_skill_material()[char.id]
+    t = Template("{{TrekkerSkillMaterials\n}}")
+    return material_list_to_template(t, material_list)
 
 
 def make_character_advancement_template(char: Character) -> Template:
-    items = get_all_items()
     material_list = get_char_advance_material()[char.id]
     t = Template("{{TrekkerUpgradeMaterials\n}}")
+    return material_list_to_template(t, material_list)
+
+
+def material_list_to_template(t: Template, material_list: list[AdvanceMaterial]) -> Template:
+    items = get_all_items()
     for index, material in enumerate(material_list, 1):
         if len(material.items) == 0:
             break
@@ -57,6 +68,22 @@ def make_character_advancement_template(char: Character) -> Template:
         item_list.append(str(make_item_template(items[1], material.gold)))
         set_arg(t, f"level{index}", " ".join(item_list))
     return t
+
+
+def update_character_advancement_material():
+    chars = get_characters()
+    tier_up_section_name = "Tier up"
+    skill_up_section_name = "Skill upgrade"
+    for char_name, page in get_character_pages().items():
+        char = chars[char_name]
+        parsed = parse(page.text)
+        force_section_text(parsed,
+                           "Upgrade materials",
+                           f"==={tier_up_section_name}===\n\n==={skill_up_section_name}===",
+                           "Gallery")
+        force_section_text(parsed, tier_up_section_name, str(make_character_advancement_template(char)))
+        force_section_text(parsed, skill_up_section_name, str(make_character_skill_advancement_template(char)))
+        save_page(page, str(parsed), "update character upgrade material")
 
 
 def main():
