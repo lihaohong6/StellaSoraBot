@@ -82,6 +82,8 @@ def get_characters() -> dict[str, Character]:
             if value:
                 setattr(c, attr, value)
         c.element = ElementType(v['EET'])
+        if c.affiliation == "???":
+            continue
         result[name] = c
     return result
 

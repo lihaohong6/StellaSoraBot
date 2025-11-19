@@ -269,12 +269,18 @@ def save_disk_skills():
 def upload_disc_skill_icons():
     upload_requests = []
     for disc in get_disks().values():
-        upload_requests.append(UploadRequest(
-            disc.main_skill.icon_path,
-            disc.main_skill.icon_page,
-            "[[Category:Disc skill icons]]")
-        )
+        if disc.icon_path.exists():
+            upload_requests.append(UploadRequest(
+                disc.main_skill.icon_path,
+                disc.main_skill.icon_page,
+                "[[Category:Disc skill icons]]")
+            )
+        else:
+            print(f"{disc.name} doesn't have an icon for skill {disc.main_skill.name}")
         for skill in disc.secondary_skills:
+            if not disc.icon_path.exists():
+                print(f"{disc.name} has no secondary skill icon for {skill.name}")
+                continue
             upload_requests.append(UploadRequest(
                 skill.icon_path,
                 skill.icon_page,
@@ -305,7 +311,7 @@ def create_disc_pages():
         p.save(summary="batch create disc pages")
 
 
-def main():
+def update_disc_all():
     upload_disc_skill_icons()
     upload_disc_images()
     create_disc_pages()
@@ -315,4 +321,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    update_disc_all()

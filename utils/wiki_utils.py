@@ -21,15 +21,17 @@ def set_section_content(wikitext: WikiText, title: str, content: str) -> None:
     section.contents = content + "\n"
 
 
-def force_section_text(wikitext: WikiText, section_title: str, text: str, prepend: str = None) -> bool:
+def force_section_text(wikitext: WikiText, section_title: str, text: str, prepend: str = None, level: int = 2) -> bool:
     for sec in wikitext.sections:
         if not sec.title:
             continue
         if sec.title.strip() == prepend:
-            sec.string = f"=={section_title}==\n" + text + "\n" + sec.string
+            heading = "=" * level
+            sec.string = f"{heading}{section_title}{heading}\n" + text + "\n" + sec.string
             return True
         if sec.title.strip() == section_title:
-            sec.string = f"=={section_title}==\n" + text + "\n"
+            heading = "=" * sec.level
+            sec.string = f"{heading}{section_title}{heading}\n" + text + "\n"
             return True
     return False
 

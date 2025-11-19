@@ -182,9 +182,13 @@ def get_story_pages():
     return get_character_pages(suffix="/story", must_exist=False)
 
 
-def main():
+def update_character_stories():
     upload_invitation_story_images()
     save_story_page_content()
+
+
+def main():
+    update_character_stories()
 
 
 if __name__ == '__main__':

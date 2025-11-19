@@ -5,7 +5,7 @@ import UnityPy
 
 from utils.data_utils import audio_wav_root
 
-data_dir = Path("~/.wine/drive_c/YostarGames/StellaSora_EN").expanduser()
+data_dir = Path("~/.var/app/com.usebottles.bottles/data/bottles/bottles/Stella-Sora/drive_c/YostarGames/StellaSora_EN").expanduser()
 sound_dir = data_dir / "Persistent_Store/SoundBanks"
 image_dir = data_dir / "StellaSora_Data/StreamingAssets/InstallResource"
 image_dir_2 = data_dir / "Persistent_Store/AssetBundles"
@@ -20,22 +20,23 @@ def export_images():
         env = UnityPy.load(str(f))
 
         for obj in env.objects:
-            if obj.type.name == "Texture2D":
-                # export texture
-                if not obj.container:
-                    continue
-                path = Path(obj.container)
-                path.parent.mkdir(parents=True, exist_ok=True)
-                if path.exists():
-                    continue
-                if path.name.endswith(".exr") or "lightmap" in path.name:
-                    continue
-                try:
-                    data = obj.read()
-                    data.image.save(path)
-                    print(f"Saved: {path}")
-                except Exception as e:
-                    print(f"Failed to save {path}: {e}")
+            # export texture
+            if obj.type.name != "Texture2D":
+                continue
+            if not obj.container:
+                continue
+            path = Path(obj.container)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if path.exists():
+                continue
+            if path.name.endswith(".exr") or "lightmap" in path.name:
+                continue
+            try:
+                data = obj.read()
+                data.image.save(path)
+                print(f"Saved: {path}")
+            except Exception as e:
+                print(f"Failed to save {path}: {e}")
 
 
 def wem_to_wav(wem_path: Path, wav_path: Path):

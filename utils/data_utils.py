@@ -20,16 +20,19 @@ assert en_root.exists()
 assert json_root.exists()
 assert strings_root.exists()
 
+
 @cache
 def load_json_from_path(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
     return json.load(open(path, "r", encoding="utf-8"))
 
+
 @cache
 def load_json(name: str) -> dict[str, Any]:
     path = json_root / f"{name}.json"
     return load_json_from_path(path)
+
 
 @cache
 def load_json_pair(name: str) -> tuple[dict, dict]:
@@ -37,11 +40,13 @@ def load_json_pair(name: str) -> tuple[dict, dict]:
     f2 = load_json_from_path(strings_root / f"{name}.json")
     return f1, f2
 
+
 def string_postprocessor(string: str) -> str:
     string = string.strip()
     string = string.replace("\v", " ")
     string = string.replace("\n", "<br/>")
     return string
+
 
 @cache
 def autoload(name: str, postprocessor: Callable[[str], str] = string_postprocessor) -> dict:
@@ -69,7 +74,7 @@ def data_to_dict(v: dict[str, Any], attrs: list[str]) -> dict[str, Any]:
     return result
 
 
-def main():
+def autoload_all_files():
     out_dir = assets_root.parent / "autoload"
     out_dir.mkdir(parents=True, exist_ok=True)
     for f in json_root.glob("*.json"):
@@ -77,6 +82,11 @@ def main():
         out_file = out_dir / f.name
         with open(out_file, "w", encoding="utf-8") as f2:
             json.dump(data, f2, ensure_ascii=False, indent=4)
+
+
+def main():
+    autoload_all_files()
+
 
 if __name__ == "__main__":
     main()
