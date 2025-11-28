@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -83,9 +84,31 @@ def export_text():
                 print(f"Failed to save {path}: {e}")
 
 
+def export_lua():
+    unpacker_dir = Path("fkStellaSora")
+    lua_source = data_dir / "Persistent_Store/Scripts/lua.arcx"
+    if not unpacker_dir.exists():
+        subprocess.run(['git', 'clone', 'https://github.com/shiikwi/fkStellaSora'], check=True)
+    assert unpacker_dir.exists() and unpacker_dir.is_dir()
+    subprocess.run(["git", "pull"], check=True, cwd=unpacker_dir)
+    subprocess.run(['dotnet', 'build'], check=True, cwd=unpacker_dir)
+    subprocess.run(['./ArchiveParser/bin/Debug/net8.0/ArchiveParser', lua_source],
+                   check=True,
+                   cwd=unpacker_dir)
+    lua_source_dir = lua_source.parent / "luaUnpack"
+    assert lua_source_dir.exists() and lua_source_dir.is_dir()
+    subprocess.run(['python', 'decompile.py', lua_source_dir], check=True, cwd=unpacker_dir / "Luadec")
+    lua_source_dir = lua_source_dir.parent / "luaUnpackdec"
+    lua_target_dir = Path("assets") / "lua"
+    if lua_target_dir.exists():
+        shutil.rmtree(lua_target_dir)
+    lua_source_dir.rename(lua_target_dir)
+
+
 def main():
     export_images()
     export_audio()
+    export_lua()
 
 
 if __name__ == "__main__":
