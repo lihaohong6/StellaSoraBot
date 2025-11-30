@@ -55,10 +55,34 @@ def get_audio() -> dict[int, list[AudioLine]]:
             result[char_id] = []
         voice_type = v['ArchVoiceType']
         source = v['Source']
+        sort_key = v['Sort']
         s1, s2 = source.split("_")
         s2 = int(s2)
-        source = f"vo_{char_id}_{'combat' if voice_type == 2 else 'ui'}_{s1}_{s2:03d}"
-        if source not in bubble_data_en:
+        type_strings = ['combat', 'ui']
+        if voice_type == 1:
+            type_strings.reverse()
+        type_strings.append('')
+        # posterchat 7 corresponds to discuss 1, and so on
+        if s1 == "posterchat" and s2 >= 7:
+            s1 = "discuss"
+            s2 = s2 - 6
+        sources = [
+            f"vo_{char_id}_{type_string}_{s1}_{s2:03d}"
+            for type_string in type_strings
+        ]
+        if sort_key >= 76:
+            s2 = sort_key - 75
+            sources.append(
+                f"vo_story_{char_id}_{s2:03d}_{s1}"
+            )
+        sources.extend([source.lower()
+                        for source in sources
+                        if source.lower() != source])
+        for source in sources:
+            if source in bubble_data_en:
+                break
+        else:
+            print(f"Audio: {source} not found")
             continue
         result[char_id].append(AudioLine(
             id=int(k),
