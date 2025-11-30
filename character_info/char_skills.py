@@ -42,6 +42,8 @@ def parse_param(param: str) -> list[int] | int | str:
     param_id = segments[2]
     hint2 = segments[3] if len(segments) > 3 else ""
     row: dict | None = data.get(str(param_id), None)
+    if file_name == "Skill" and hint2 == "Title":
+        return row["Title"]
     if row is not None and "SkillPercentAmend" in row:
         return normalize_percentage(row["SkillPercentAmend"], hint)
     if file_name in {"Shield", "Buff", "Effect"}:
@@ -129,17 +131,25 @@ class Skill:
 
     def format_params(self) -> list[str] | None:
         result = []
-        for level in range(9):
+        for level in range(10):
             desc = self.desc
+            failed = False
             for param_num, param in enumerate(self.params):
                 search_string = "{" + str(param_num + 1) + "}"
                 if search_string in desc and param == -1:
+                    print(f"Failed to format skill {self.name}")
                     return None
                 if type(param) != list:
                     desc = desc.replace(search_string, str(param))
                 else:
+                    if len(param) <= level:
+                        failed = True
+                        break
                     desc = desc.replace(search_string, str(param[level]))
-            result.append(desc)
+            if failed:
+                assert level == 9
+            else:
+                result.append(desc)
         return result
 
     def to_template(self) -> Template:
