@@ -1,8 +1,12 @@
 import shutil
 import subprocess
+from concurrent.futures import as_completed
+from concurrent.futures.process import ProcessPoolExecutor
 from pathlib import Path
+from typing import Callable, TypeVar
 
 import UnityPy
+from UnityPy.files import ObjectReader
 
 from utils.data_utils import audio_wav_root
 
@@ -13,31 +17,57 @@ image_dir_2 = data_dir / "Persistent_Store/AssetBundles"
 text_dir = data_dir / "Persistent_Store/AssetBundles"
 assert data_dir.exists() and image_dir.exists() and text_dir.exists()
 
+T = TypeVar("T")
+
+def for_each_object(f: Path, mapper: Callable[[ObjectReader], T]) -> list[T]:
+    env = UnityPy.load(str(f))
+    result: list[T] = []
+    for obj in env.objects:
+        r = mapper(obj)
+        if r is not None:
+            result.append(r)
+    return result
+
+
+def asset_map(directories: list[Path], mapper: Callable[[ObjectReader], T]) -> list[T]:
+    files: list[Path] = []
+    for directory in directories:
+        files.extend(directory.rglob("*.unity3d"))
+    files = [f for f in files if f.is_file()]
+    print(f"Processing {len(files)} files...")
+    result: list[T] = []
+    with ProcessPoolExecutor(max_workers=20) as executor:
+        future_to_file = {executor.submit(for_each_object, f, mapper): f for f in files}
+        for future in as_completed(future_to_file):
+            for res in future.result():
+                result.append(res)
+    return result
+
+
+def image_exporter(obj: ObjectReader) -> None:
+    # export texture
+    # if obj.type.name != "Texture2D":
+    #     continue
+    if not obj.container:
+        return
+    if not obj.container.endswith("png"):
+        return
+    path = Path(obj.container)
+    if path.exists():
+        return
+    if path.name.endswith(".exr") or "lightmap" in path.name:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        data = obj.read()
+        data.image.save(path)
+        print(f"Saved: {path}")
+    except Exception as e:
+        print(f"Failed to save {path}: {e}")
+
 
 def export_images():
-    for f in list(image_dir.rglob("*.unity3d")) + list(image_dir_2.rglob("*.unity3d")):
-        if not f.is_file():
-            continue
-        env = UnityPy.load(str(f))
-
-        for obj in env.objects:
-            # export texture
-            if obj.type.name != "Texture2D":
-                continue
-            if not obj.container:
-                continue
-            path = Path(obj.container)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            if path.exists():
-                continue
-            if path.name.endswith(".exr") or "lightmap" in path.name:
-                continue
-            try:
-                data = obj.read()
-                data.image.save(path)
-                print(f"Saved: {path}")
-            except Exception as e:
-                print(f"Failed to save {path}: {e}")
+    asset_map([image_dir, image_dir_2], image_exporter)
 
 
 def wem_to_wav(wem_path: Path, wav_path: Path):

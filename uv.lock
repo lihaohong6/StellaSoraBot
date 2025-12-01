@@ -322,7 +322,7 @@ dependencies = [
     { name = "pywikibot" },
     { name = "requests" },
     { name = "slpp" },
-    { name = "unitypy" },
+    { name = "unitypy", extra = ["ttgen"] },
     { name = "wikitextparser" },
 ]
 
@@ -331,7 +331,7 @@ requires-dist = [
     { name = "pywikibot", specifier = ">=10.5.0" },
     { name = "requests", specifier = ">=2.32.5" },
     { name = "slpp", specifier = ">=1.2.3" },
-    { name = "unitypy", specifier = ">=1.23.0" },
+    { name = "unitypy", extras = ["ttgen"], specifier = ">=1.23.0" },
     { name = "wikitextparser", specifier = ">=0.56.4" },
 ]
 
@@ -360,6 +360,23 @@ wheels = [
 ]
 
 [[package]]
+name = "typetreegeneratorapi"
+version = "0.0.10"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a4/ae/a881d33c296276dd9bf9c0bb8d89acec6301831291fcec5bb12587bc715c/typetreegeneratorapi-0.0.10-cp36-abi3-macosx_11_0_arm64.whl", hash = "sha256:8ba72e60ba512707fe63873d3bb55f8e86d99c0b45d4b5205bd4ca43465cf331", size = 8307535, upload-time = "2025-11-28T13:36:50.91Z" },
+    { url = "https://files.pythonhosted.org/packages/20/07/9ba8ba47c623f6533206c3c15526e91413bef661e457642b727921841b73/typetreegeneratorapi-0.0.10-cp36-abi3-macosx_11_0_x86_64.whl", hash = "sha256:037c8ddddaa39134c7a5ea8c004749d7df6a28a9cdeb89a6ae12c73eeef40ee0", size = 8566995, upload-time = "2025-11-28T13:36:52.525Z" },
+    { url = "https://files.pythonhosted.org/packages/a0/6c/d0d976267909f1e0cd271c7d025c78c3dc6d2a5597f422f67db898689c1e/typetreegeneratorapi-0.0.10-cp36-abi3-manylinux2014_aarch64.whl", hash = "sha256:90b2e132aa2b8698a5ea2698227fb91932bf5c334f89e7fa2394ed401d510aea", size = 8329186, upload-time = "2025-11-28T13:36:54.732Z" },
+    { url = "https://files.pythonhosted.org/packages/e7/fc/ec2d7e5c7fb8f8eb53489aa9387cd21f58da9556b18730a06ada4ce2a81a/typetreegeneratorapi-0.0.10-cp36-abi3-manylinux2014_armv7l.whl", hash = "sha256:ba0f5a7127ea728cd6e8724526910d26e68fece10f433b0481d5b239377c8151", size = 8054460, upload-time = "2025-11-28T13:36:56.223Z" },
+    { url = "https://files.pythonhosted.org/packages/79/f0/cabdd091063c844ffdaf1f5b7a8efce7835556ce81affab5329cdf49b87a/typetreegeneratorapi-0.0.10-cp36-abi3-manylinux2014_x86_64.whl", hash = "sha256:c61b3986d49ccd69d62e5147795d1e82c1f6582cfdd3df169f95dd00cd605219", size = 8613588, upload-time = "2025-11-28T13:36:57.797Z" },
+    { url = "https://files.pythonhosted.org/packages/74/3f/551d1ccac5f76272253d28ea3bd31cf80f35cb093fd062766b6baef72e5d/typetreegeneratorapi-0.0.10-cp36-abi3-musllinux_2_0_aarch64.whl", hash = "sha256:97dcd61e64ff631db53443a72375bbd0cb5727e3aeba762c72629ce0dbfc77a8", size = 8328432, upload-time = "2025-11-28T13:36:59.762Z" },
+    { url = "https://files.pythonhosted.org/packages/ce/16/1f820e201327afcadf42d5208d34b3961d9dae73dc3848eed579e39afc6e/typetreegeneratorapi-0.0.10-cp36-abi3-musllinux_2_0_x86_64.whl", hash = "sha256:a5859d4b10e120e7bb09cbcc4725f2141a09b7591019afe1fb8705a0ffe64353", size = 8613543, upload-time = "2025-11-28T13:37:01.406Z" },
+    { url = "https://files.pythonhosted.org/packages/68/36/e739b865587116ab889f598f3d5f9236c6496298eb1b64ab70960babca6b/typetreegeneratorapi-0.0.10-cp36-abi3-win32.whl", hash = "sha256:aeba7f30accc86a48b844e3ce2dc939184d831da381dd41d6415623228f54e51", size = 7678680, upload-time = "2025-11-28T13:37:03.574Z" },
+    { url = "https://files.pythonhosted.org/packages/ed/bc/f911995cae93fa8fd882a677f6bc304965db6f066bbabdee6e761762d512/typetreegeneratorapi-0.0.10-cp36-abi3-win_amd64.whl", hash = "sha256:e96003e973c8d52d221b4ae50f377bcaf7538f2098e437d5383a1b7f13fa72ba", size = 7859632, upload-time = "2025-11-28T13:37:05.165Z" },
+    { url = "https://files.pythonhosted.org/packages/44/0e/7f9c8cdafcb966d32e6e4c1e4cd333a4706b8d84ef70b2f21e33f68c4c88/typetreegeneratorapi-0.0.10-cp36-abi3-win_arm64.whl", hash = "sha256:b5a6b62e2b6cfe19c9659afd8f194cf7b53380924a7a56447e1c6a5914afbe9a", size = 7529325, upload-time = "2025-11-28T13:37:07.188Z" },
+]
+
+[[package]]
 name = "unitypy"
 version = "1.23.0"
 source = { registry = "https://pypi.org/simple" }
@@ -385,6 +402,11 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/23/0d/bd18f4e130a39d4b345c22d87715ef65f4448a03df3cb48a9c692f00634f/unitypy-1.23.0-cp313-cp313-win32.whl", hash = "sha256:e7885b88ea0e7555364b68d06cde4c21bbd9e914c5be70b2857ddb987c5df24c", size = 1969904, upload-time = "2025-07-06T15:20:25.659Z" },
     { url = "https://files.pythonhosted.org/packages/c2/7d/663d5257d1aeda568f242d6eb3c5558adfdf8fdd5d364f8b5d06a5c71df3/unitypy-1.23.0-cp313-cp313-win_amd64.whl", hash = "sha256:9adf35d7aa20f264f67ec187dab8568a2d04ca6133021de6e7107921cc571044", size = 1975858, upload-time = "2025-07-06T15:20:27.381Z" },
     { url = "https://files.pythonhosted.org/packages/30/94/7252d17b7818370f0f74b0725f11fdbe0194fe98ff175ed141488186295e/unitypy-1.23.0-cp313-cp313-win_arm64.whl", hash = "sha256:dbc1598091acaadc5337dfaa2add442535c5401f8ec4db0b720d06eb981b8396", size = 2533017, upload-time = "2025-07-06T15:20:28.707Z" },
+]
+
+[package.optional-dependencies]
+ttgen = [
+    { name = "typetreegeneratorapi" },
 ]
 
 [[package]]
