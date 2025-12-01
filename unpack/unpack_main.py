@@ -1,3 +1,4 @@
+import json
 import shutil
 import subprocess
 from concurrent.futures import as_completed
@@ -6,11 +7,15 @@ from pathlib import Path
 from typing import Callable, TypeVar
 
 import UnityPy
+from UnityPy import Environment
+from UnityPy.enums import ClassIDType
 from UnityPy.files import ObjectReader
+from UnityPy.helpers.TypeTreeGenerator import TypeTreeGenerator
 
 from utils.data_utils import audio_wav_root
 
-data_dir = Path("~/.var/app/com.usebottles.bottles/data/bottles/bottles/Stella-Sora/drive_c/YostarGames/StellaSora_EN").expanduser()
+data_dir = Path(
+    "~/.var/app/com.usebottles.bottles/data/bottles/bottles/Stella-Sora/drive_c/YostarGames/StellaSora_EN").expanduser()
 sound_dir = data_dir / "Persistent_Store/SoundBanks"
 image_dir = data_dir / "StellaSora_Data/StreamingAssets/InstallResource"
 image_dir_2 = data_dir / "Persistent_Store/AssetBundles"
@@ -19,17 +24,18 @@ assert data_dir.exists() and image_dir.exists() and text_dir.exists()
 
 T = TypeVar("T")
 
-def for_each_object(f: Path, mapper: Callable[[ObjectReader], T]) -> list[T]:
+
+def for_each_object(f: Path, mapper: Callable[[ObjectReader, Environment], T]) -> list[T]:
     env = UnityPy.load(str(f))
     result: list[T] = []
     for obj in env.objects:
-        r = mapper(obj)
+        r = mapper(obj, env)
         if r is not None:
             result.append(r)
     return result
 
 
-def asset_map(directories: list[Path], mapper: Callable[[ObjectReader], T]) -> list[T]:
+def asset_map(directories: list[Path], mapper: Callable[[ObjectReader, Environment], T]) -> list[T]:
     files: list[Path] = []
     for directory in directories:
         files.extend(directory.rglob("*.unity3d"))
@@ -44,7 +50,7 @@ def asset_map(directories: list[Path], mapper: Callable[[ObjectReader], T]) -> l
     return result
 
 
-def image_exporter(obj: ObjectReader) -> None:
+def image_exporter(obj: ObjectReader, _: Environment) -> None:
     # export texture
     # if obj.type.name != "Texture2D":
     #     continue
@@ -114,14 +120,18 @@ def export_text():
                 print(f"Failed to save {path}: {e}")
 
 
-def export_lua():
-    unpacker_dir = Path("fkStellaSora")
-    lua_source = data_dir / "Persistent_Store/Scripts/lua.arcx"
+def build_fk_stella_sora(unpacker_dir: Path = Path("fkStellaSora")) -> Path:
     if not unpacker_dir.exists():
         subprocess.run(['git', 'clone', 'https://github.com/shiikwi/fkStellaSora'], check=True)
     assert unpacker_dir.exists() and unpacker_dir.is_dir()
     subprocess.run(["git", "pull"], check=True, cwd=unpacker_dir)
     subprocess.run(['dotnet', 'build'], check=True, cwd=unpacker_dir)
+    return unpacker_dir
+
+
+def export_lua():
+    unpacker_dir = build_fk_stella_sora()
+    lua_source = data_dir / "Persistent_Store/Scripts/lua.arcx"
     subprocess.run(['./ArchiveParser/bin/Debug/net8.0/ArchiveParser', lua_source],
                    check=True,
                    cwd=unpacker_dir)
@@ -135,10 +145,66 @@ def export_lua():
     lua_source_dir.rename(lua_target_dir)
 
 
+def generate_dummy_dll():
+    unpacker_dir = build_fk_stella_sora()
+    game_assembly = data_dir / "GameAssembly.dll"
+    assert game_assembly.exists()
+
+    global_metadata_original = data_dir / "StellaSora_Data/il2cpp_data/Metadata/global-metadata.dat"
+    assert global_metadata_original.exists()
+    metadata_parser_dir = unpacker_dir / "MetaDataParser/bin/Debug/net8.0"
+    global_metadata_copy = metadata_parser_dir / "global-metadata.dat"
+    global_metadata_copy.unlink(missing_ok=True)
+    shutil.copy(global_metadata_original, global_metadata_copy)
+    global_metadata = metadata_parser_dir / "global-metadata.dec.dat"
+    global_metadata.unlink(missing_ok=True)
+    subprocess.run(["./MetaDataParser"], check=True, cwd=metadata_parser_dir)
+    assert global_metadata.exists()
+
+    il2_cpp_dir = Path("~/Documents/Programs/Il2CppDumper/Il2CppDumper/bin/Debug/net8.0").expanduser()
+    assert il2_cpp_dir.is_dir()
+
+    subprocess.run(['./Il2CppDumper',
+                    game_assembly,
+                    global_metadata.absolute(),
+                    Path("assets").absolute()],
+                   check=False,
+                   cwd=il2_cpp_dir)
+
+
+def process_monobehavior_file(obj: ObjectReader, env: Environment, generator: TypeTreeGenerator) -> str | None:
+    container = obj.container
+    if obj.type != ClassIDType.MonoBehaviour or not container or "/actor2d/" not in container:
+        return
+    out_path = Path(container)
+    if out_path.exists():
+        return
+    try:
+        env.typetree_generator = generator
+        x = obj.parse_as_dict()
+    except Exception as e:
+        print(e)
+        return
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    json.dump(x, open(out_path, "w", encoding='utf-8'), ensure_ascii=False, indent=4)
+    print(f"Written to {out_path}")
+
+
+def export_facial_offset_monobehaviors():
+    generator = TypeTreeGenerator("2022.3.62f2")
+    generator.load_local_dll_folder("assets/DummyDll")
+    for f in list(image_dir.rglob("*.unity3d")) + list(image_dir_2.rglob("*.unity")):
+        env = UnityPy.load(str(f))
+        for obj in env.objects:
+            process_monobehavior_file(obj, env, generator)
+
+
 def main():
     export_images()
     export_audio()
     export_lua()
+    generate_dummy_dll()
+    export_facial_offset_monobehaviors()
 
 
 if __name__ == "__main__":
