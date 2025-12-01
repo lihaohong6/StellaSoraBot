@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from enum import Enum
 from functools import cache
 from pathlib import Path
 
@@ -11,23 +12,34 @@ from utils.skill_utils import skill_escape, get_effects
 from utils.upload_utils import UploadRequest, process_uploads
 from utils.wiki_utils import force_section_text, set_arg, save_page
 
+class SkillParamType(Enum):
+    NONE = 0
+    ASCENSION = 1
+    SKILL_LEVEL = 3
+    BREAKTHROUGH = 4
 
-def parse_param(param: str) -> list[int] | int | str:
+@dataclass
+class SkillParam:
+    param_type: SkillParamType
+    params: list[int] | int | str
+
+def process_param(param: str) -> tuple[SkillParamType, list[int] | int | str]:
+    hint: str = ""
     hint2: str = ""
 
-    def normalize_percentage(value: float | list[float], hint: str) -> str | list[str]:
+    def normalize_percentage(value: float | list[float]) -> str | list[str]:
         if type(value) is list:
-            return [normalize_percentage(v, hint) for v in value]
+            return [normalize_percentage(v2) for v2 in value]
         value = float(value)
         suffix = "%"
         if hint2 == "Time":
             suffix = ""
         if "Pct" in hint:
             suffix = "%"
+        if "10K" in hint:
+            value /= 10000
         if "HdPct" in hint:
             value *= 100
-        elif "10K" in hint:
-            value /= 10000
         return f"{value:.1f}{suffix}"
 
     segments = param.split(',')
@@ -41,11 +53,12 @@ def parse_param(param: str) -> list[int] | int | str:
         raise RuntimeError(f"No data found for {file_name}")
     param_id = segments[2]
     hint2 = segments[3] if len(segments) > 3 else ""
-    row: dict | None = data.get(str(param_id), None)
+    row: dict = data.get(str(param_id), {})
+    param_type = SkillParamType(row.get('levelTypeData', 0))
     if file_name == "Skill" and hint2 == "Title":
-        return row["Title"]
+        return param_type, row["Title"]
     if row is not None and "SkillPercentAmend" in row:
-        return normalize_percentage(row["SkillPercentAmend"], hint)
+        return param_type, normalize_percentage(row["SkillPercentAmend"])
     if file_name in {"Shield", "Buff", "Effect"}:
         value_table = load_json(f"{file_name}Value")
         cur_id = int(param_id)
@@ -58,7 +71,7 @@ def parse_param(param: str) -> list[int] | int | str:
             key = str(cur_id + i * 10)
             # Only 1/2 value(s); terminate early
             if i in {1, 2} and key not in value_table:
-                return result[0]
+                return param_type, result[0]
             v = value_table[key][segments[3]]
             if segments[3] == "EffectTypeFirstSubtype":
                 # Special case: this is an effect that needs to be looked up in a table
@@ -69,20 +82,31 @@ def parse_param(param: str) -> list[int] | int | str:
                 effect = effects[0]
                 result.append(effect.desc)
             else:
-                v = normalize_percentage(v, hint)
+                v = normalize_percentage(v)
                 result.append(v)
-        return result
+        return param_type, result
     if file_name == "EffectValue":
         assert segments[1] == "NoLevel"
-        return normalize_percentage(row['EffectTypeParam1'], hint)
+        return param_type, normalize_percentage(row['EffectTypeParam1'])
     if file_name == "BuffValue":
         assert segments[3] == "Time"
-        return int(row["Time"] / 10000)
+        return param_type, int(row["Time"] / 10000)
     raise RuntimeError(f"Could not find matching file for param {param}")
 
 
-def parse_params(d: dict, max_params: int) -> list[list[str]]:
-    params = []
+def parse_param(param_string: str) -> SkillParam:
+    param_type, param = process_param(param_string)
+    if type(param) is not int:
+        if type(param) is not list:
+            param = [param]
+        values: list[str] = param
+        if all(".0" in value for value in values):
+            param = [value.replace(".0", "") for value in values]
+    return SkillParam(param_type, param)
+
+
+def parse_params(d: dict, max_params: int) -> list[SkillParam]:
+    params: list[SkillParam] = []
     for i in range(1, max_params + 1):
         param_key = f"Param{i}"
         if param_key not in d:
@@ -92,9 +116,15 @@ def parse_params(d: dict, max_params: int) -> list[list[str]]:
         except Exception as e:
             print(d['Id'])
             print(e)
-            param = -1
+            param = SkillParam(SkillParamType.NONE, -1)
         params.append(param)
     return params
+
+
+def skill_level_hint(param_type: SkillParamType, original: str) -> str:
+    if param_type in {SkillParamType.ASCENSION, SkillParamType.BREAKTHROUGH}:
+        return "{{SkillLevelHint|" + param_type.name.lower() + "|" + original + "}}"
+    return original
 
 
 @dataclass
@@ -106,7 +136,7 @@ class Skill:
     cd: float
     energy: float
     icon: str
-    params: list[list[str]]
+    params: list[SkillParam]
 
     def icon_path(self) -> Path:
         p = assets_root / "icon/skill"
@@ -132,24 +162,11 @@ class Skill:
     def format_params(self) -> list[str] | None:
         result = []
         for level in range(10):
-            desc = self.desc
-            failed = False
-            for param_num, param in enumerate(self.params):
-                search_string = "{" + str(param_num + 1) + "}"
-                if search_string in desc and param == -1:
-                    print(f"Failed to format skill {self.name}")
-                    return None
-                if type(param) != list:
-                    desc = desc.replace(search_string, str(param))
-                else:
-                    if len(param) <= level:
-                        failed = True
-                        break
-                    desc = desc.replace(search_string, str(param[level]))
-            if failed:
-                assert level == 9
-            else:
-                result.append(desc)
+            desc = format_desc(self.desc, self.params, level)
+            if desc is None:
+                print(f"Failed to format {self.name} for level {level}")
+                continue
+            result.append(desc)
         return result
 
     def to_template(self) -> Template:
@@ -167,6 +184,24 @@ class Skill:
                 set_arg(t, f"desc_{index}", desc)
 
         return t
+
+
+def format_desc(desc: str, params: list[SkillParam], level: int) -> str | None:
+    for param_num, skill_param in enumerate(params):
+        search_string = "{" + str(param_num + 1) + "}"
+        param = skill_param.params
+        if search_string in desc and param == -1:
+            return None
+        if type(param) != list:
+            desc = desc.replace(search_string, str(param))
+        else:
+            if skill_param.param_type == SkillParamType.SKILL_LEVEL:
+                desc = desc.replace(search_string, str(param[level]))
+            else:
+                string = "/".join(param)
+                string = skill_level_hint(skill_param.param_type, string)
+                desc = desc.replace(search_string, string)
+    return desc
 
 
 @dataclass

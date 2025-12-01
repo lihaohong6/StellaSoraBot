@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from functools import cache
 
-from character_info.char_skills import parse_params
+from character_info.char_skills import parse_params, SkillParam
 from character_info.characters import get_id_to_char
 from utils.data_utils import autoload, data_to_dict
 from utils.skill_utils import skill_escape
@@ -17,7 +17,7 @@ class CharPotential:
     build: int
     branch_type: int
     max_level: int
-    params: list[list[str]]
+    params: list[SkillParam]
 
 
 @cache
