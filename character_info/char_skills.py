@@ -8,7 +8,7 @@ from wikitextparser import parse, Template
 
 from character_info.characters import get_id_to_char, get_character_pages, ElementType, common_name_to_element_type
 from utils.data_utils import autoload, load_json, data_root, assets_root
-from utils.skill_utils import skill_escape, get_effects
+from utils.skill_utils import skill_escape, get_effects, Effect
 from utils.upload_utils import UploadRequest, process_uploads
 from utils.wiki_utils import force_section_text, set_arg, save_page
 
@@ -23,16 +23,26 @@ class SkillParam:
     param_type: SkillParamType
     params: list[int] | int | str
 
+
+def get_effect_by_type(type1: int, type2: int) -> Effect:
+    effects = [e for e in get_effects() if e.type1 == type1 and e.type2 == type2]
+    assert len(effects) > 0
+    effect = effects[0]
+    return effect
+
 def process_param(param: str) -> tuple[SkillParamType, list[int] | int | str]:
     hint: str = ""
-    hint2: str = ""
+    dict_key_hint: str = ""
 
-    def normalize_percentage(value: float | list[float]) -> str | list[str]:
-        if type(value) is list:
-            return [normalize_percentage(v2) for v2 in value]
-        value = float(value)
+    def normalize_percentage(original_value: float | list[float]) -> str | list[str]:
+        if type(original_value) is list:
+            return [normalize_percentage(v2) for v2 in original_value]
+        try:
+            value = float(original_value)
+        except ValueError:
+            return str(original_value)
         suffix = "%"
-        if hint2 == "Time":
+        if dict_key_hint == "Time":
             suffix = ""
         if "Pct" in hint:
             suffix = "%"
@@ -52,10 +62,10 @@ def process_param(param: str) -> tuple[SkillParamType, list[int] | int | str]:
     if not data:
         raise RuntimeError(f"No data found for {file_name}")
     param_id = segments[2]
-    hint2 = segments[3] if len(segments) > 3 else ""
+    dict_key_hint = segments[3] if len(segments) > 3 else ""
     row: dict = data.get(str(param_id), {})
     param_type = SkillParamType(row.get('levelTypeData', 0))
-    if file_name == "Skill" and hint2 == "Title":
+    if file_name == "Skill" and dict_key_hint == "Title":
         return param_type, row["Title"]
     if row is not None and "SkillPercentAmend" in row:
         return param_type, normalize_percentage(row["SkillPercentAmend"])
@@ -72,14 +82,11 @@ def process_param(param: str) -> tuple[SkillParamType, list[int] | int | str]:
             # Only 1/2 value(s); terminate early
             if i in {1, 2} and key not in value_table:
                 return param_type, result[0]
-            v = value_table[key][segments[3]]
-            if segments[3] == "EffectTypeFirstSubtype":
+            v = value_table[key][dict_key_hint]
+            if dict_key_hint == "EffectTypeFirstSubtype":
                 # Special case: this is an effect that needs to be looked up in a table
-                type1 = v
                 type2 = value_table[key]["EffectTypeSecondSubtype"]
-                effects = [e for e in get_effects() if e.type1 == type1 and e.type2 == type2]
-                assert len(effects) > 0
-                effect = effects[0]
+                effect = get_effect_by_type(v, type2)
                 result.append(effect.desc)
             else:
                 v = normalize_percentage(v)
@@ -87,7 +94,10 @@ def process_param(param: str) -> tuple[SkillParamType, list[int] | int | str]:
         return param_type, result
     if file_name == "EffectValue":
         assert segments[1] == "NoLevel"
-        return param_type, normalize_percentage(row['EffectTypeParam1'])
+        value = row[dict_key_hint]
+        if dict_key_hint == "EffectTypeFirstSubtype":
+            value = get_effect_by_type(value, row['EffectTypeSecondSubtype']).desc
+        return param_type, normalize_percentage(value)
     if file_name == "BuffValue":
         assert segments[3] == "Time"
         return param_type, int(row["Time"] / 10000)
@@ -109,8 +119,6 @@ def parse_params(d: dict, max_params: int) -> list[SkillParam]:
     params: list[SkillParam] = []
     for i in range(1, max_params + 1):
         param_key = f"Param{i}"
-        if param_key not in d:
-            break
         try:
             param = parse_param(d[param_key])
         except Exception as e:
@@ -173,7 +181,7 @@ class Skill:
         t = Template("{{TrekkerSkill\n}}")
 
         set_arg(t, "name", self.name)
-        set_arg(t, "brief", self.brief_desc)
+        set_arg(t, "brief", format_desc(self.brief_desc, self.params, 1))
         if self.cd != 0:
             set_arg(t, "cooldown", self.cd)
         if self.energy != 0:
@@ -189,8 +197,10 @@ class Skill:
 def format_desc(desc: str, params: list[SkillParam], level: int) -> str | None:
     for param_num, skill_param in enumerate(params):
         search_string = "{" + str(param_num + 1) + "}"
+        if search_string not in desc:
+            continue
         param = skill_param.params
-        if search_string in desc and param == -1:
+        if param == -1:
             return None
         if type(param) != list:
             desc = desc.replace(search_string, str(param))
