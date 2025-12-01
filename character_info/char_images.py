@@ -8,11 +8,17 @@ def upload_char_images():
     req = []
     for char in chars.values():
         head_root = assets_root / "icon" / "head"
+
         path = head_root / f"head_{char.id}01_xxl.png"
         page = f"{char.name}-head-xxl.png"
         req.append(UploadRequest(path, page, ""))
+
         path = head_root / f"head_{char.id}01_xl.png"
         page = f"{char.name}.png"
+        req.append(UploadRequest(path, page, ""))
+
+        path = head_root / f"head_{char.id}01_s.png"
+        page = f"{char.name}-head-s.png"
         req.append(UploadRequest(path, page, ""))
     process_uploads(req)
 
