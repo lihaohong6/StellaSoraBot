@@ -98,9 +98,14 @@ def get_character_pages(suffix: str = "", must_exist: bool = True) -> dict[str, 
     return result
 
 
+@cache
 def get_id_to_char() -> dict[int, Character]:
     chars = get_characters()
     return dict((c.id, c) for c in chars.values())
+
+
+def id_to_char(char_id: int) -> Character:
+    return get_id_to_char()[char_id]
 
 
 def main():

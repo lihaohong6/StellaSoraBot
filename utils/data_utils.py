@@ -13,6 +13,8 @@ strings_root = en_root / "language/en_US"
 assets_root = Path("assets") / "assetbundles"
 audio_wav_root = Path("assets/audio")
 
+lua_root = Path("assets/lua")
+
 temp_dir = Path("/tmp/stellasorabot")
 temp_dir.mkdir(parents=True, exist_ok=True)
 
