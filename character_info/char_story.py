@@ -3,9 +3,10 @@ from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
+from pywikibot import Page
 from wikitextparser import parse, Template
 
-from character_info.characters import get_characters, get_character_pages, get_id_to_char
+from character_info.characters import get_characters, get_character_pages, get_id_to_char, Character
 from utils.data_utils import autoload, assets_root
 from utils.upload_utils import UploadRequest, process_uploads
 from utils.wiki_utils import force_section_text, save_page, set_arg
@@ -163,7 +164,7 @@ def invitation_story_sections(stories: list[InvitationStory]) -> str:
 def save_story_page_content():
     affinity_archives = get_affinity_archives()
     invitation_stories = get_invitation_stories()
-    for char_name, page in get_story_pages().items():
+    for char, page in get_story_pages().items():
         if page.exists():
             parsed = parse(page.text)
         else:
@@ -171,14 +172,14 @@ def save_story_page_content():
 ==Affinity archives==
 ==Invitation stories==
 """)
-        text = affinity_archive_sections(affinity_archives[char_name])
+        text = affinity_archive_sections(affinity_archives[char.name])
         force_section_text(parsed, "Affinity archives", text)
-        text = invitation_story_sections(invitation_stories[char_name])
+        text = invitation_story_sections(invitation_stories[char.name])
         force_section_text(parsed, "Invitation stories", text)
         save_page(page, str(parsed), "update character story")
 
 
-def get_story_pages():
+def get_story_pages() -> dict[Character, Page]:
     return get_character_pages(suffix="/story", must_exist=False)
 
 

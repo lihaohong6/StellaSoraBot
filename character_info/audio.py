@@ -126,7 +126,7 @@ def upload_audio_files(char_name: str, audio_lines: list[AudioLine]) -> None:
     process_uploads(upload_requests, force=True)
 
 
-def get_character_audio_pages() -> dict[str, Page]:
+def get_character_audio_pages() -> dict[Character, Page]:
     return get_character_pages(suffix="/audio", must_exist=False)
 
 
@@ -145,16 +145,14 @@ def lines_to_template(lines: list[AudioLine]) -> str:
 
 
 def generate_audio_page():
-    chars = get_characters()
     audio = get_audio()
-    for char_name, page in get_character_audio_pages().items():
-        if not should_process_char_audio(char_name):
+    for char, page in get_character_audio_pages().items():
+        if not should_process_char_audio(char.name):
             continue
-        char = chars[char_name]
         if char.id not in audio:
             continue
         lines = audio[char.id]
-        upload_audio_files(char_name, lines)
+        upload_audio_files(char.name, lines)
         result = ["{{TrekkerAudioTop}}",
                   "",
                   "==Daily Voice Chat==",

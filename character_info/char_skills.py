@@ -265,9 +265,8 @@ def get_skills() -> dict[str, CharSkills]:
 
 def update_skills():
     all_skills = get_skills()
-    pages = get_character_pages()
-    for char_name, page in pages.items():
-        skills = all_skills.get(char_name)
+    for char, page in get_character_pages():
+        skills = all_skills.get(char.name)
         if skills is None:
             continue
         result = []
@@ -288,7 +287,7 @@ def update_skills():
         text = '\n'.join(result)
         res = force_section_text(parsed, "Skills", text, "Gallery")
         if not res:
-            print(f"Warning: skill section not found for {char_name}")
+            print(f"Warning: skill section not found for {char.name}")
             continue
         save_page(page, str(parsed), summary="Generate character skills")
 

@@ -88,13 +88,14 @@ def get_characters() -> dict[str, Character]:
     return result
 
 
-def get_character_pages(suffix: str = "", must_exist: bool = True) -> dict[str, Page]:
+def get_character_pages(suffix: str = "", must_exist: bool = True) -> dict[Character, Page]:
     characters = get_characters()
     gen = PreloadingGenerator(Page(s, c.name + suffix) for c in characters.values())
-    result: dict[str, Page] = {}
+    result: dict[Character, Page] = {}
     for page in gen:
         if page.exists() or not must_exist:
-            result[page.title().split("/")[0]] = page
+            char_name = page.title().split("/")[0]
+            result[characters[char_name]] = page
     return result
 
 

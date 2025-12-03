@@ -71,11 +71,9 @@ def material_list_to_template(t: Template, material_list: list[AdvanceMaterial])
 
 
 def update_character_advancement_material():
-    chars = get_characters()
     tier_up_section_name = "Tier up"
     skill_up_section_name = "Skill upgrade"
-    for char_name, page in get_character_pages().items():
-        char = chars[char_name]
+    for char, page in get_character_pages().items():
         parsed = parse(page.text)
         force_section_text(parsed,
                            "Upgrade materials",

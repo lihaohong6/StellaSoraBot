@@ -33,10 +33,7 @@ def get_character_tags(char_id: int) -> list[CharacterTag]:
 
 def update_infobox():
     auto_link = ["Lucky Oasis"]
-    chars = get_characters()
-    pages = get_character_pages()
-    for char_name, page in pages.items():
-        char = chars[char_name]
+    for char, page in get_character_pages():
         parsed = parse(page.text)
         target = find_template_by_name(parsed, "TrekkerData")
         if not target:
