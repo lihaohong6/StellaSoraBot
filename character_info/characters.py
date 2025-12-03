@@ -57,6 +57,9 @@ class Character:
     affiliation: str = None
     element: ElementType = None
 
+    def __hash__(self) -> int:
+        return hash(self.id)
+
 
 @cache
 def get_characters() -> dict[str, Character]:

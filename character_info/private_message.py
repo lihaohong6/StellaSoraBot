@@ -1,15 +1,17 @@
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from pywikibot import Page, FilePage
 from slpp import slpp
-from wikitextparser import Template
+from wikitextparser import Template, parse
 
-from character_info.characters import get_characters, Character, get_id_to_char, id_to_char
+from character_info.char_story import get_story_pages
+from character_info.characters import get_characters, Character, get_id_to_char, id_to_char, get_character_pages
 from utils.data_utils import lua_root, assets_root
 from utils.upload_utils import UploadRequest, process_uploads
-from utils.wiki_utils import s
+from utils.wiki_utils import s, force_section_text, save_page
 
 
 class MessengerRow:
@@ -55,7 +57,10 @@ def parse_lua_file(file: Path) -> list[dict[str, Any]]:
 
 
 def process_text(text: str) -> str:
-    return text.replace("==PLAYER_NAME==", "[player name]")
+    text = text.replace("==PLAYER_NAME==", "[username]")
+    text = re.subn("~~(?=~)", "~~<nowiki/>", text)[0]
+    text = text.replace(r"\226\128\148", "—")
+    return text
 
 
 def parse_private_messages(char: Character, data: list[dict[str, Any]]) -> CharacterMessages:
@@ -84,16 +89,26 @@ def parse_private_messages(char: Character, data: list[dict[str, Any]]) -> Chara
             # 1: Tyrant message
             # 3: Trekker sticker
             # 4: Tyrant sticker
-            assert msg_type in {0, 1, 3, 4}
+            # 5: Info?
+            assert msg_type in {0, 1, 3, 4, 5}
             char_string: str
             text = process_text(text)
             show_pfp = False
             if char_string != state.char_string:
                 show_pfp = True
                 state.char_string = char_string
+            if msg_type == 5:
+                current_conversation.append(
+                    MessengerRow("info", {"text": text} | options_dict)
+                )
+                return
             if msg_type in {3, 4}:
                 assert text == "" and image_name != ""
-                text = f"[[File:Phone_{image_name}.png|90px]]"
+                if image_name.startswith("emoji"):
+                    size = "90"
+                else:
+                    size = "200"
+                text = f"[[File:Phone_{image_name}.png|{size}px]]"
             if msg_type in {1, 4}:
                 current_conversation.append(
                     MessengerRow("reply", {"text": text} | options_dict)
@@ -157,16 +172,36 @@ def conversation_to_template(conversation: MessengerConversation) -> str:
     return "\n".join(result)
 
 
-def get_private_messages():
+def get_private_messages() -> dict[str, CharacterMessages]:
     pm_root = lua_root / "game/ui/avg/_en/config"
+    result: dict[str, CharacterMessages] = {}
     for char_name, char in get_characters().items():
         pm_path = pm_root / f"pm{char.id}01.lua"
         assert pm_path.exists()
         data = parse_lua_file(pm_path)
         messages = parse_private_messages(char, data)
-        for index, conversation in enumerate(messages.messages, 1):
-            print(f"==Conversation {index}==")
-            print(conversation_to_template(conversation))
+        result[char_name] = messages
+    return result
+
+
+def update_private_messages() -> None:
+    messages = get_private_messages()
+    for char, page in get_story_pages().items():
+        parsed = parse(page.text)
+        result = []
+        for index, conversation in enumerate(messages[char.name].messages, 1):
+            lines = [
+                "{{ToggleChat",
+                f"|Conversation {index}",
+                "|" + conversation_to_template(conversation),
+                "}}"
+            ]
+            result.append("\n".join(lines))
+        force_section_text(parsed,
+                           section_title="Heartlink Chat",
+                           text="\n\n".join(result),
+                           prepend="Invitation stories")
+        save_page(page, str(parsed), summary="Update Heartlink chat")
 
 
 def upload_emojis():
@@ -184,11 +219,25 @@ def upload_emojis():
     process_uploads(upload_requests)
 
 
+def upload_phone_pictures():
+    path = assets_root / "icon/avgphoneimagemsg"
+    upload_requests = []
+    for file in path.glob("pic*.png"):
+        target = FilePage(s, f"File:Phone_{file.name}")
+        upload_requests.append(UploadRequest(
+            file,
+            target,
+            text="[[Category:Chat images]]",
+            summary="batch upload Heartlink chat images"
+        ))
+    process_uploads(upload_requests)
+
+
 def main():
     upload_emojis()
-    get_private_messages()
+    upload_phone_pictures()
+    update_private_messages()
 
 
 if __name__ == "__main__":
     main()
-
