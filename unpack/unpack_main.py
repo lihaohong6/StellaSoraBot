@@ -172,22 +172,30 @@ def generate_dummy_dll():
                    cwd=il2_cpp_dir)
 
 
-def process_monobehavior_file(obj: ObjectReader, env: Environment, generator: TypeTreeGenerator) -> str | None:
+class UnityJsonEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, bytes):
+            return obj.hex()
+        return super().default(obj)
+
+
+def process_sprite_file(obj: ObjectReader, env: Environment, generator: TypeTreeGenerator) -> str | None:
+    if obj.type.name != "Sprite":
+        return
     container = obj.container
-    if obj.type != ClassIDType.MonoBehaviour or not container or "/actor2d/" not in container:
+    if not container or not container.endswith("png"):
         return
-    out_path = Path(container)
-    if out_path.exists():
+    if not "/actor2d/" in container:
         return
-    try:
-        env.typetree_generator = generator
-        x = obj.parse_as_dict()
-    except Exception as e:
-        print(e)
+    path = Path(container.replace("png", "json"))
+    if path.exists():
         return
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    json.dump(x, open(out_path, "w", encoding='utf-8'), ensure_ascii=False, indent=4)
-    print(f"Written to {out_path}")
+    env.typetree_generator = generator
+    data = obj.read_typetree()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False, cls=UnityJsonEncoder)
+        print(f"Written to {path}")
 
 
 def export_facial_offset_monobehaviors():
@@ -196,7 +204,7 @@ def export_facial_offset_monobehaviors():
     for f in list(image_dir.rglob("*.unity3d")) + list(image_dir_2.rglob("*.unity")):
         env = UnityPy.load(str(f))
         for obj in env.objects:
-            process_monobehavior_file(obj, env, generator)
+            process_sprite_file(obj, env, generator)
 
 
 def main():
@@ -208,4 +216,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    export_facial_offset_monobehaviors()
