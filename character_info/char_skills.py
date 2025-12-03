@@ -208,7 +208,8 @@ def format_desc(desc: str, params: list[SkillParam], level: int) -> str | None:
             if skill_param.param_type == SkillParamType.SKILL_LEVEL:
                 desc = desc.replace(search_string, str(param[level]))
             else:
-                string = "/".join(param)
+                # At most 9 levels. Sometimes we get filler data with 0s.
+                string = "/".join(param[:9])
                 string = skill_level_hint(skill_param.param_type, string)
                 desc = desc.replace(search_string, string)
     return desc
