@@ -10,7 +10,7 @@ from wikitextparser import Template
 from character_info.characters import id_to_char, Character, get_character_pages
 from utils.data_utils import assets_root, sprite_root, load_lua_table, lua_root
 from utils.upload_utils import UploadRequest, process_uploads
-from utils.wiki_utils import save_json_page, set_arg, save_page
+from utils.wiki_utils import save_json_page, set_arg, save_page, PageCreationRequest, process_page_creation_requests
 
 
 @dataclass
@@ -234,6 +234,7 @@ def get_char_sprites() -> dict[str, dict[str, list[Sprite]]]:
 def upload_sprites():
     sprites = get_char_sprites()
     upload_requests = []
+    page_creation_requests = []
     json_data: dict[str, dict[str, list[str]]] = {}
     for char_name, sprite_dict in sprites.items():
         json_data[char_name] = {}
@@ -250,7 +251,13 @@ def upload_sprites():
                     summary='batch upload sprites'
                 ))
                 json_data[char_name][variant_name].append(sprite.combined.stem.split("_")[-1])
+        page_creation_requests.append(PageCreationRequest(
+            page=f"Category:{char_name} sprites",
+            text="[[Category:Sprites by character]]",
+            summary="create sprite categories"
+        ))
     process_uploads(upload_requests)
+    process_page_creation_requests(page_creation_requests)
     save_json_page("Module:Sprite/data.json", json_data, summary="update json page")
 
 
@@ -273,7 +280,8 @@ def create_gallery_pages():
     sprites = get_char_sprites()
     for char, page in get_character_pages("/gallery", must_exist=False).items():
         templates = sprites_to_template(char.name, sprites[char.name])
-        save_page(page, f"""{{{{GalleryTop}}}}
+        if not page.exists():
+            save_page(page, f"""{{{{GalleryTop}}}}
 ==Sprites==
 {templates}
 {{{{GalleryBottom}}}}

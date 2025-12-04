@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from pywikibot import Site, Page
+from pywikibot.pagegenerators import PreloadingGenerator
 from wikitextparser import WikiText, Template, Section
 
 s = Site()
@@ -83,3 +84,23 @@ def find_template_by_name(wikitext: WikiText, name: str) -> Template | None:
         if t.name.strip() == name:
             return t
     return None
+
+
+@dataclasses.dataclass
+class PageCreationRequest:
+    page: Page | str
+    text: str
+    summary: str
+
+
+def process_page_creation_requests(request_list: list[PageCreationRequest]) -> None:
+    title_to_request: dict[str, PageCreationRequest] = {}
+    for r in request_list:
+        if isinstance(r.page, str):
+            r.page = Page(s, r.page)
+        title_to_request[r.page.title()] = r
+    gen = PreloadingGenerator(r.page for r in request_list)
+    for page in gen:
+        r = title_to_request.get(page.title(), None)
+        assert r is not None
+        save_page(page, r.text, r.summary)
