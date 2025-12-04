@@ -8,6 +8,7 @@ from PIL import Image
 
 from character_info.characters import id_to_char, Character
 from utils.data_utils import assets_root, sprite_root, load_lua_table, lua_root
+from utils.upload_utils import UploadRequest, process_uploads
 
 
 @dataclass
@@ -79,9 +80,8 @@ def process_assets(sprites: list[Sprite], char: Character, variant_name: str) ->
     for top in sprites[1:]:
         out = top.get_sprite_path(char.name, variant_name)
         out.parent.mkdir(parents=True, exist_ok=True)
-        if out.exists():
-            continue
-        compose(base, top, out)
+        if not out.exists():
+            compose(base, top, out)
         top.combined = out
 
 
@@ -168,15 +168,15 @@ def get_avg_characters() -> dict[str, AvgCharacter]:
     return result
 
 
-def process_char_sprites(char: Character | AvgCharacter, char_dir: Path):
+def process_char_sprites(char: Character | AvgCharacter, char_dir: Path) -> dict[str, list[Sprite]]:
     image_dir = char_dir / "atlas_png"
     images: dict[str, list[Sprite]] = {}
     for variant_dir in image_dir.iterdir():
         if not variant_dir.is_dir():
             continue
         sprites = []
-        images[variant_dir.name] = sprites
         variant_name = variant_dir.name
+        images[variant_name] = sprites
         for f in variant_dir.glob("*.png"):
             m = re.search(r"_(\d{3})\.", f.name)
             if not m:
@@ -191,11 +191,14 @@ def process_char_sprites(char: Character | AvgCharacter, char_dir: Path):
         if len(sprites) == 0:
             continue
         process_assets(sprites, char, variant_name)
+    return images
 
 
-def main():
+@cache
+def get_char_sprites() -> dict[str, dict[str, list[Sprite]]]:
     root = assets_root / "actor2d/characteravg"
     avg_chars = get_avg_characters()
+    char_sprites: dict[str, dict[str, list[Sprite]]] = {}
     for char_dir in root.iterdir():
         if not char_dir.is_dir():
             continue
@@ -208,7 +211,33 @@ def main():
             char = avg_chars.get(char_dir.name)
         if char is None:
             char = AvgCharacter(char_dir.name, char_dir.name)
-        process_char_sprites(char, char_dir)
+        char_sprites[char.name] = process_char_sprites(char, char_dir)
+    return char_sprites
+
+
+def upload_sprites():
+    sprites = get_char_sprites()
+    upload_requests = []
+    for char_name, sprite_dict in sprites.items():
+        allowed_variants = variant_whitelist.get(char_name, set())
+        for variant_name, sprite_list in sprite_dict.items():
+            if variant_name not in allowed_variants:
+                continue
+            for sprite in sprite_list:
+                if sprite.number == 1:
+                    continue
+                assert sprite.combined is not None
+                upload_requests.append(UploadRequest(
+                    sprite.combined,
+                    sprite.combined.name,
+                    f'[[Category:{char_name} sprites]]',
+                    summary='batch upload sprites'
+                ))
+    process_uploads(upload_requests)
+
+
+def main():
+    upload_sprites()
 
 
 if __name__ == '__main__':
