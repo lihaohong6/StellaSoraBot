@@ -8,7 +8,6 @@ from typing import Callable, TypeVar
 
 import UnityPy
 from UnityPy import Environment
-from UnityPy.enums import ClassIDType
 from UnityPy.files import ObjectReader
 from UnityPy.helpers.TypeTreeGenerator import TypeTreeGenerator
 
@@ -51,25 +50,32 @@ def asset_map(directories: list[Path], mapper: Callable[[ObjectReader, Environme
 
 
 def image_exporter(obj: ObjectReader, _: Environment) -> None:
-    # export texture
-    # if obj.type.name != "Texture2D":
-    #     continue
     if not obj.container:
         return
     if not obj.container.endswith("png"):
         return
+    if "lightmap" in obj.container:
+        return
     path = Path(obj.container)
-    if path.exists():
-        return
-    if path.name.endswith(".exr") or "lightmap" in path.name:
-        return
     path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        data = obj.read()
-        data.image.save(path)
-        print(f"Saved: {path}")
-    except Exception as e:
-        print(f"Failed to save {path}: {e}")
+    image_exported = True
+    if not path.exists():
+        try:
+            data = obj.read()
+            data.image.save(path)
+            print(f"Saved: {path}")
+        except Exception as e:
+            image_exported = False
+            print(f"Failed to save {path}: {e}")
+    json_path = Path(obj.container).with_suffix(".json")
+    if not json_path.exists() and image_exported:
+        try:
+            data = obj.read_typetree()
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4, ensure_ascii=False, cls=UnityJsonEncoder)
+                print(f"Written to {json_path}")
+        except Exception as e:
+            print(f"Failed to save {json_path}: {e}")
 
 
 def export_images():
@@ -179,41 +185,12 @@ class UnityJsonEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-def process_sprite_file(obj: ObjectReader, env: Environment, generator: TypeTreeGenerator) -> str | None:
-    if obj.type.name != "Sprite":
-        return
-    container = obj.container
-    if not container or not container.endswith("png"):
-        return
-    if not "/actor2d/" in container:
-        return
-    path = Path(container.replace("png", "json"))
-    if path.exists():
-        return
-    env.typetree_generator = generator
-    data = obj.read_typetree()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False, cls=UnityJsonEncoder)
-        print(f"Written to {path}")
-
-
-def export_facial_offset_monobehaviors():
-    generator = TypeTreeGenerator("2022.3.62f2")
-    generator.load_local_dll_folder("assets/DummyDll")
-    for f in list(image_dir.rglob("*.unity3d")) + list(image_dir_2.rglob("*.unity")):
-        env = UnityPy.load(str(f))
-        for obj in env.objects:
-            process_sprite_file(obj, env, generator)
-
-
 def main():
+    generate_dummy_dll()
     export_images()
     export_audio()
     export_lua()
-    generate_dummy_dll()
-    export_facial_offset_monobehaviors()
 
 
 if __name__ == "__main__":
-    export_facial_offset_monobehaviors()
+    main()

@@ -1,6 +1,5 @@
 import json
 import re
-import shutil
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -71,6 +70,7 @@ def compose(base: Sprite, top: Sprite, out: Path) -> None:
     overlay_layer.paste(top_image, (offset_x, offset_y))
     combined = Image.alpha_composite(base_image, overlay_layer)
     combined.save(out)
+    print(f"Saved {out}")
 
 
 def process_assets(sprites: list[Sprite], char: Character, variant_name: str) -> None:
@@ -85,22 +85,62 @@ def process_assets(sprites: list[Sprite], char: Character, variant_name: str) ->
         top.combined = out
 
 
-def retrieve_sprite_json_data(f: Path) -> SpriteData:
+def retrieve_sprite_json_data(f: Path) -> SpriteData | None:
     data = json.load(open(f, "r", encoding="utf-8"))
-    data = data['m_RD']['textureRect']
+    try:
+        data = data['m_RD']['textureRect']
+    except KeyError:
+        print(f"Failed to retrieve sprite json data on {f}")
+        return None
     return SpriteData(data['x'], data['y'], data['width'], data['height'])
+
 
 # TODO: harc-code allow list
 variant_whitelist: dict[str, set[str]] = {
+    "Aeloria": {"a", "b"},
     "Amber": {"a", "b", "c", "f", "g", },
-    "Cosette": {"a", "b", },
-    "Tilia": {"a", "b", "c", "d", "e", },
-    "Shimiao": {"a", "b", },
-    "Shia": {"a", "b", },
+    "Ann": {"a"},
+    "Bastelina": {"a"},
+    "Beatrixa": {"a"},
+    "Bernina": {"a", },
+    "Canace": {"a", },
+    "Caramel": {"a"},
+    "Chitose": {"a", "b"},
+    "Chixia": {"a"},
+    "Claire": {"a"},
+    "Coronis": {"a"},
+    "Cosette": {"a", "b"},
+    "Eleanor": {"b"},
+    "Feagin": {"a"},
+    "Female tyrant": {"a", "b", "c", "f", "g", "h", "i", },
+    "Flora": {"b"},
+    "Freesia": {"a", "b"},
+    "Fuyuka": {"a"},
+    "Gerie": {"a", },
+    "Iris": {"a", "b", "d", "e"},
+    "Jinglin": {"a"},
+    "Kaede": {"a"},
+    "Karin": {"a", "d"},
+    "Kasimira": {"a"},
+    "Laru": {"a"},
+    "Male tyrant": {"a", "b", "c", "f", "g", "h", "i", },
+    "Marlene": {"a", "b"},
+    "Minova": {"a", "b"},
+    "Mistique": {"a", "c"},
+    "Nanoha": {"a", "b"},
+    "Nazuka": {"a", },
+    "Nazuna": {"a", "b"},
+    "Neuvira": {"a", },
     "Noya": {"a", "b", "d", "e", },
+    "Portia": {"a"},
+    "Ridge": {"a"},
+    "Shia": {"a", },
+    "Shimiao": {"a"},
     "Teresa": {"a"},
+    "Tilia": {"a", "b", "c", "d", "e", },
     "Virigia": {"a"},
-    "Vollara": {"a"}
+    "Vollara": {"a"},
+    "Willow": {"a", },
 }
 
 
@@ -130,7 +170,6 @@ def get_avg_characters() -> dict[str, AvgCharacter]:
 
 def process_char_sprites(char: Character | AvgCharacter, char_dir: Path):
     image_dir = char_dir / "atlas_png"
-    json_dir = char_dir / "atlas_json"
     images: dict[str, list[Sprite]] = {}
     for variant_dir in image_dir.iterdir():
         if not variant_dir.is_dir():
@@ -143,7 +182,7 @@ def process_char_sprites(char: Character | AvgCharacter, char_dir: Path):
             if not m:
                 continue
             num = int(m.group(1))
-            json_file = json_dir / variant_name / f.name.replace(".png", ".json")
+            json_file = f.with_suffix(".json")
             if not json_file.exists():
                 print(f"skipping {variant_name}/{f.name} because the json file does not exist")
                 continue
