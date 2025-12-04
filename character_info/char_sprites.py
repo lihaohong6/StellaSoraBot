@@ -5,11 +5,12 @@ from functools import cache
 from pathlib import Path
 
 from PIL import Image
+from wikitextparser import Template
 
-from character_info.characters import id_to_char, Character
+from character_info.characters import id_to_char, Character, get_character_pages
 from utils.data_utils import assets_root, sprite_root, load_lua_table, lua_root
 from utils.upload_utils import UploadRequest, process_uploads
-from utils.wiki_utils import save_json_page
+from utils.wiki_utils import save_json_page, set_arg, save_page
 
 
 @dataclass
@@ -96,7 +97,6 @@ def retrieve_sprite_json_data(f: Path) -> SpriteData | None:
     return SpriteData(data['x'], data['y'], data['width'], data['height'])
 
 
-# TODO: harc-code allow list
 variant_whitelist: dict[str, set[str]] = {
     "Aeloria": {"a", "b"},
     "Amber": {"a", "b", "c", "f", "g", },
@@ -104,6 +104,7 @@ variant_whitelist: dict[str, set[str]] = {
     "Bastelina": {"a"},
     "Beatrixa": {"a"},
     "Bernina": {"a", },
+    "Bloc": {"a"},
     "Canace": {"a", },
     "Caramel": {"a"},
     "Chitose": {"a", "b"},
@@ -195,8 +196,7 @@ def process_char_sprites(char: Character | AvgCharacter, char_dir: Path) -> dict
     return images
 
 
-@cache
-def get_char_sprites() -> dict[str, dict[str, list[Sprite]]]:
+def export_sprites() -> dict[str, dict[str, list[Sprite]]]:
     root = assets_root / "actor2d/characteravg"
     avg_chars = get_avg_characters()
     char_sprites: dict[str, dict[str, list[Sprite]]] = {}
@@ -216,16 +216,28 @@ def get_char_sprites() -> dict[str, dict[str, list[Sprite]]]:
     return char_sprites
 
 
+@cache
+def get_char_sprites() -> dict[str, dict[str, list[Sprite]]]:
+    result: dict[str, dict[str, list[Sprite]]] = {}
+    sprites = export_sprites()
+    for char_name, sprite_dict in sprites.items():
+        if char_name not in variant_whitelist:
+            continue
+        result[char_name] = dict(
+            (variant, sprite_dict[variant])
+            for variant in sorted(sprite_dict.keys())
+            if variant in variant_whitelist[char_name]
+        )
+    return result
+
+
 def upload_sprites():
     sprites = get_char_sprites()
     upload_requests = []
     json_data: dict[str, dict[str, list[str]]] = {}
     for char_name, sprite_dict in sprites.items():
-        allowed_variants = variant_whitelist.get(char_name, set())
         json_data[char_name] = {}
         for variant_name, sprite_list in sprite_dict.items():
-            if variant_name not in allowed_variants:
-                continue
             json_data[char_name][variant_name] = []
             for sprite in sprite_list:
                 if sprite.number == 1:
@@ -242,8 +254,35 @@ def upload_sprites():
     save_json_page("Module:Sprite/data.json", json_data, summary="update json page")
 
 
+def sprites_to_template(char: str, sprites: dict[str, list[Sprite]]) -> str:
+    result = []
+    sprites = dict((k, v) for k, v in sprites.items() if len(v) > 0)
+    for variant_name in sprites.keys():
+        t = Template("{{Sprite\n}}")
+        set_arg(t, "char", char)
+        set_arg(t, "variant", variant_name)
+        name = f"Variant {variant_name.upper()}"
+        if len(sprites) == 1:
+            name = "Default"
+        set_arg(t, "name", name)
+        result.append(str(t))
+    return "\n\n".join(result)
+
+
+def create_gallery_pages():
+    sprites = get_char_sprites()
+    for char, page in get_character_pages("/gallery", must_exist=False).items():
+        templates = sprites_to_template(char.name, sprites[char.name])
+        save_page(page, f"""{{{{GalleryTop}}}}
+==Sprites==
+{templates}
+{{{{GalleryBottom}}}}
+""", "batch update gallery page")
+
+
 def main():
     upload_sprites()
+    create_gallery_pages()
 
 
 if __name__ == '__main__':
