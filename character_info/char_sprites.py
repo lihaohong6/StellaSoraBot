@@ -9,6 +9,7 @@ from PIL import Image
 from character_info.characters import id_to_char, Character
 from utils.data_utils import assets_root, sprite_root, load_lua_table, lua_root
 from utils.upload_utils import UploadRequest, process_uploads
+from utils.wiki_utils import save_json_page
 
 
 @dataclass
@@ -218,11 +219,14 @@ def get_char_sprites() -> dict[str, dict[str, list[Sprite]]]:
 def upload_sprites():
     sprites = get_char_sprites()
     upload_requests = []
+    json_data: dict[str, dict[str, list[str]]] = {}
     for char_name, sprite_dict in sprites.items():
         allowed_variants = variant_whitelist.get(char_name, set())
+        json_data[char_name] = {}
         for variant_name, sprite_list in sprite_dict.items():
             if variant_name not in allowed_variants:
                 continue
+            json_data[char_name][variant_name] = []
             for sprite in sprite_list:
                 if sprite.number == 1:
                     continue
@@ -233,7 +237,9 @@ def upload_sprites():
                     f'[[Category:{char_name} sprites]]',
                     summary='batch upload sprites'
                 ))
+                json_data[char_name][variant_name].append(sprite.combined.stem.split("_")[-1])
     process_uploads(upload_requests)
+    save_json_page("Module:Sprite/data.json", json_data, summary="update json page")
 
 
 def main():
