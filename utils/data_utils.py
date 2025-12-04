@@ -3,6 +3,8 @@ from functools import cache
 from pathlib import Path
 from typing import Any, Callable
 
+from slpp import slpp
+
 data_root = Path("StellaSoraData")
 jp_root = data_root / "JP"
 cn_root = data_root / "CN"
@@ -14,6 +16,7 @@ assets_root = Path("assets") / "assetbundles"
 audio_wav_root = Path("assets/audio")
 
 lua_root = Path("assets/lua")
+sprite_root = Path("assets/sprites")
 
 temp_dir = Path("/tmp/stellasorabot")
 temp_dir.mkdir(parents=True, exist_ok=True)
@@ -41,6 +44,15 @@ def load_json_pair(name: str) -> tuple[dict, dict]:
     f1 = load_json_from_path(json_root / f"{name}.json")
     f2 = load_json_from_path(strings_root / f"{name}.json")
     return f1, f2
+
+
+@cache
+def load_lua_table(file: Path) -> dict | list:
+    with open(file, "r", encoding='utf-8') as f:
+        content = f.read()
+    content = content.lstrip("return")
+    data = slpp.decode(content)
+    return data
 
 
 def string_postprocessor(string: str) -> str:

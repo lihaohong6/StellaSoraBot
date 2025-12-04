@@ -9,7 +9,7 @@ from wikitextparser import Template, parse
 
 from character_info.char_story import get_story_pages
 from character_info.characters import get_characters, Character, get_id_to_char, id_to_char, get_character_pages
-from utils.data_utils import lua_root, assets_root
+from utils.data_utils import lua_root, assets_root, load_lua_table
 from utils.upload_utils import UploadRequest, process_uploads
 from utils.wiki_utils import s, force_section_text, save_page
 
@@ -46,14 +46,6 @@ class MessageState:
 
     def reset(self):
         self.reset_char_string()
-
-
-def parse_lua_file(file: Path) -> list[dict[str, Any]]:
-    with open(file, "r") as f:
-        content = f.read()
-    content = content.lstrip("return")
-    data = slpp.decode(content)
-    return data
 
 
 def process_text(text: str) -> str:
@@ -178,7 +170,7 @@ def get_private_messages() -> dict[str, CharacterMessages]:
     for char_name, char in get_characters().items():
         pm_path = pm_root / f"pm{char.id}01.lua"
         assert pm_path.exists()
-        data = parse_lua_file(pm_path)
+        data = load_lua_table(pm_path)
         messages = parse_private_messages(char, data)
         result[char_name] = messages
     return result
