@@ -9,17 +9,16 @@ from typing import Callable, TypeVar
 import UnityPy
 from UnityPy import Environment
 from UnityPy.files import ObjectReader
-from UnityPy.helpers.TypeTreeGenerator import TypeTreeGenerator
 
 from utils.data_utils import audio_wav_root
 
 data_dir = Path(
     "~/.var/app/com.usebottles.bottles/data/bottles/bottles/Stella-Sora/drive_c/YostarGames/StellaSora_EN").expanduser()
 sound_dir = data_dir / "Persistent_Store/SoundBanks"
-image_dir = data_dir / "StellaSora_Data/StreamingAssets/InstallResource"
-image_dir_2 = data_dir / "Persistent_Store/AssetBundles"
+unity_asset_dir_1 = data_dir / "StellaSora_Data/StreamingAssets/InstallResource"
+unity_asset_dir_2 = data_dir / "Persistent_Store/AssetBundles"
 text_dir = data_dir / "Persistent_Store/AssetBundles"
-assert data_dir.exists() and image_dir.exists() and text_dir.exists()
+assert data_dir.exists() and unity_asset_dir_1.exists() and text_dir.exists()
 
 T = TypeVar("T")
 
@@ -79,7 +78,7 @@ def image_exporter(obj: ObjectReader, _: Environment) -> None:
 
 
 def export_images():
-    asset_map([image_dir, image_dir_2], image_exporter)
+    asset_map([unity_asset_dir_1, unity_asset_dir_2], image_exporter)
 
 
 def wem_to_wav(wem_path: Path, wav_path: Path):
@@ -92,7 +91,7 @@ def wem_to_wav(wem_path: Path, wav_path: Path):
 def export_audio():
     target_dir = audio_wav_root
     target_dir.mkdir(parents=True, exist_ok=True)
-    for f in sound_dir.iterdir():
+    for f in list(sound_dir.iterdir()) + list(unity_asset_dir_1.glob("*.wem")):
         if not f.is_file() or not f.name.endswith(".wem"):
             continue
         source = f
