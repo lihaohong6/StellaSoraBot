@@ -26,7 +26,7 @@ def get_affinity_archives() -> dict[str, list[AffinityArchive]]:
     data = autoload("CharacterArchiveContent")
     for name, char in chars.items():
         lst = []
-        for i in range(3, 14):
+        for i in range(2, 14):
             key = f"{char.id}{i:02}"
             if key not in data:
                 break
@@ -147,7 +147,7 @@ def upload_invitation_story_images() -> None:
 
 
 def invitation_story_sections(stories: list[InvitationStory]) -> str:
-    result = []
+    result = ["{{InvitationStorySection}}"]
     for story in stories:
         result.append(f"==={story.name}===")
         template = Template("{{InvitationStory\n}}")
