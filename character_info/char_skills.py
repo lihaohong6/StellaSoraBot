@@ -265,7 +265,7 @@ def get_skills() -> dict[str, CharSkills]:
 
 def update_skills():
     all_skills = get_skills()
-    for char, page in get_character_pages():
+    for char, page in get_character_pages().items():
         skills = all_skills.get(char.name)
         if skills is None:
             continue
