@@ -8,8 +8,9 @@ from pywikibot import Page
 from pywikibot.pagegenerators import PreloadingGenerator
 from wikitextparser import parse, Template
 
+from character_info.audio import wav_to_ogg
 from character_info.characters import ElementType
-from utils.data_utils import autoload, load_json, assets_root
+from utils.data_utils import autoload, load_json, assets_root, temp_dir
 from utils.skill_utils import skill_escape
 from utils.upload_utils import UploadRequest, process_uploads
 from utils.wiki_utils import s, find_template_by_name, set_arg, save_page, find_section, set_section_content
@@ -158,7 +159,7 @@ class Disc:
 
 
 @cache
-def get_disks() -> dict[int, Disc]:
+def get_discs() -> dict[int, Disc]:
     data = load_json("Disc")
     items = autoload("Item")
     disc_ips = autoload("DiscIP")
@@ -187,7 +188,7 @@ def get_disks() -> dict[int, Disc]:
 
 
 def upload_disc_images():
-    disks = get_disks()
+    disks = get_discs()
     upload_requests = []
     for disc in disks.values():
         upload_requests.append(UploadRequest(disc.image_path, disc.image_file, "[[Category:Disc images]]"))
@@ -196,7 +197,7 @@ def upload_disc_images():
 
 
 def get_disc_pages() -> list[tuple[Disc, Page]]:
-    discs = get_disks()
+    discs = get_discs()
     name_to_disc = dict((d.name, d) for d in discs.values())
     pages = PreloadingGenerator([Page(s, d.name) for d in discs.values()])
     result = []
@@ -245,7 +246,8 @@ def save_disk_skills():
                 set_arg(t, f"skill_desc_{i}", skill.descriptions[i - 1])
             set_arg(t, "skillicon", f"{{{{DiscSkillIcon|bgicon={skill.icon_bg_name}|fgicon={skill.icon_name}}}}}")
             for i in range(1, len(skill.unlock) + 1):
-                unlock = " ".join("{{MelodyRequirement|" + name + "|" + str(quantity) + "}}" for name, quantity in skill.unlock[i - 1])
+                unlock = " ".join("{{MelodyRequirement|" + name + "|" + str(quantity) + "}}" for name, quantity in
+                                  skill.unlock[i - 1])
                 if unlock != "":
                     set_arg(t, f"melody_{i}", unlock)
 
@@ -268,7 +270,7 @@ def save_disk_skills():
 
 def upload_disc_skill_icons():
     upload_requests = []
-    for disc in get_disks().values():
+    for disc in get_discs().values():
         if disc.icon_path.exists():
             upload_requests.append(UploadRequest(
                 disc.main_skill.icon_path,
@@ -297,6 +299,7 @@ def create_disc_pages():
         p.text = f"""{{{{DiscData
 }}}}
 '''{disc.name}''' is a {disc.rarity}-star Disc in Stella Sora.
+{{{{DiscBGM}}}}
 
 ==Melody Skill==
 
@@ -311,9 +314,61 @@ def create_disc_pages():
         p.save(summary="batch create disc pages")
 
 
+@cache
+def parse_disc_txtp() -> dict[int, int]:
+    p = Path("assets/audio/txtp")
+    result: dict[int, int] = {}
+    for f in p.glob("*.txtp"):
+        m = re.search(r"1640212992=(\d+)\)", f.name)
+        if not m:
+            continue
+        hash_value = int(m.group(1))
+        with open(f, "r", encoding="utf-8") as f2:
+            content = f2.read()
+        m = re.search(r"/(\d+)\.wem", content)
+        if not m:
+            continue
+        file_name = int(m.group(1))
+        result[hash_value] = file_name
+    return result
+
+
+def upload_disc_bgms():
+    def wwise_fnv_hash(string):
+        string = string.lower().encode('utf-8')
+        hash_value = 2166136261
+        prime = 16777619
+        for char in string:
+            hash_value = (hash_value * prime) % (2 ** 32)
+            hash_value = hash_value ^ char
+        return hash_value
+
+    hash_to_file_name = parse_disc_txtp()
+    discs = get_discs()
+    upload_requests = []
+    for disc in discs.values():
+        vo_file = f"outfit_{disc.disc_bg}"
+        hashed = wwise_fnv_hash(vo_file)
+        file_name = hash_to_file_name.get(hashed)
+        assert file_name is not None
+        source_wav = Path(f"assets/audio/{file_name}.media.wav")
+        assert source_wav.exists()
+        source_ogg = temp_dir / source_wav.with_suffix(".ogg").name
+        if not source_ogg.exists():
+            wav_to_ogg(source_wav, source_ogg)
+        upload_requests.append(UploadRequest(
+            source_ogg,
+            f"BGM_{disc.name}.ogg",
+            text=f"[[Category:Disc BGM]]",
+            summary="upload disc BGM"
+        ))
+    process_uploads(upload_requests)
+
+
 def update_disc_all():
     upload_disc_skill_icons()
     upload_disc_images()
+    upload_disc_bgms()
     create_disc_pages()
     save_disc_infobox()
     save_disk_skills()
