@@ -99,6 +99,7 @@ def retrieve_sprite_json_data(f: Path) -> SpriteData | None:
 
 variant_whitelist: dict[str, set[str]] = {
     "Aeloria": {"a", "b"},
+    "Albedo": {"a"},
     "Amber": {"a", "b", "c", "f", "g", },
     "Ann": {"a"},
     "Bastelina": {"a"},
@@ -114,6 +115,7 @@ variant_whitelist: dict[str, set[str]] = {
     "Cosette": {"a", "b"},
     "Donna": {"a"},
     "Eleanor": {"b"},
+    "Fannie": {"a"},
     "Feagin": {"a"},
     "Female tyrant": {"a", "b", "c", "f", "g", "h", "i", },
     "Firenze": {"c"},
@@ -121,6 +123,7 @@ variant_whitelist: dict[str, set[str]] = {
     "Freesia": {"a", "b"},
     "Fuyuka": {"a"},
     "Gerie": {"a", },
+    "Horizon": {"a"},
     "Iris": {"a", "b", "d", "e"},
     "Isaki": {"a"},
     "Jinglin": {"a"},
@@ -129,6 +132,7 @@ variant_whitelist: dict[str, set[str]] = {
     "Kaydoke": {"a"},
     "Kasimira": {"a"},
     "Laru": {"a"},
+    "Leafia": {"a"},
     "Male tyrant": {"a", "b", "c", "f", "g", "h", "i", },
     "Marlene": {"a", "b"},
     "Minova": {"a", "b"},
@@ -142,6 +146,7 @@ variant_whitelist: dict[str, set[str]] = {
     "Ophir": {"a"},
     "Portia": {"a"},
     "Ridge": {"a"},
+    "Serena": {"a"},
     "Shia": {"a", },
     "Shimiao": {"a"},
     "Teresa": {"a"},
@@ -161,10 +166,11 @@ class AvgCharacter:
 
 
 @cache
-def get_avg_characters() -> dict[str, AvgCharacter]:
+def get_avg_characters() -> tuple[dict[str, AvgCharacter], dict[str, str]]:
     file = lua_root / "game/ui/avg/_en/preset/avgcharacter.lua"
     data: list[dict] = load_lua_table(file)
     result: dict[str, AvgCharacter] = {}
+    reuse_table: dict[str, str] = {}
     for row in data:
         char_id = row['id']
         name = row['name']
@@ -172,8 +178,11 @@ def get_avg_characters() -> dict[str, AvgCharacter]:
             name = 'Female tyrant'
         if char_id == 'avg3_101':
             name = 'Male tyrant'
-        result[char_id] = AvgCharacter(char_id, name, row['name_bg_color'], row.get('reuse', None))
-    return result
+        reuse: str | None = row.get('reuse', None)
+        result[char_id] = AvgCharacter(char_id, name, row['name_bg_color'], reuse)
+        if reuse is not None:
+            reuse_table[char_id] = reuse
+    return result, reuse_table
 
 
 def process_char_sprites(char: Character | AvgCharacter, char_dir: Path) -> dict[str, list[Sprite]]:
@@ -204,9 +213,9 @@ def process_char_sprites(char: Character | AvgCharacter, char_dir: Path) -> dict
 
 def export_sprites() -> dict[str, dict[str, list[Sprite]]]:
     root = assets_root / "actor2d/characteravg"
-    avg_chars = get_avg_characters()
+    avg_chars, reuse_table = get_avg_characters()
     char_sprites: dict[str, dict[str, list[Sprite]]] = {}
-    for char_dir in root.iterdir():
+    for char_dir in sorted(root.iterdir(), key=lambda p: p.name):
         if not char_dir.is_dir():
             continue
         char_id_match = re.search(r"avg1_(\d{3})", char_dir.name)
@@ -214,10 +223,15 @@ def export_sprites() -> dict[str, dict[str, list[Sprite]]]:
         if char_id_match:
             char_id = char_id_match.group(1)
             char = id_to_char(int(char_id))
+        dir_name = char_dir.name
         if char is None:
-            char = avg_chars.get(char_dir.name)
+            char = avg_chars.get(dir_name)
+        if char is None and dir_name in reuse_table:
+            char = avg_chars.get(reuse_table[dir_name])
         if char is None:
             char = AvgCharacter(char_dir.name, char_dir.name)
+        if char.name in char_sprites:
+            continue
         char_sprites[char.name] = process_char_sprites(char, char_dir)
     return char_sprites
 
