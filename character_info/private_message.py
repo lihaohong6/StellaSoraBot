@@ -1,15 +1,15 @@
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from functools import cache
 from typing import Any
 
-from pywikibot import Page, FilePage
-from slpp import slpp
-from wikitextparser import Template, parse
+from pywikibot import FilePage
+from wikitextparser import parse
 
 from character_info.char_story import get_story_pages
-from character_info.characters import get_characters, Character, get_id_to_char, id_to_char, get_character_pages
+from character_info.characters import get_characters, Character, id_to_char
 from utils.data_utils import lua_root, assets_root, load_lua_table
+from utils.text_utils import escape_text
 from utils.upload_utils import UploadRequest, process_uploads
 from utils.wiki_utils import s, force_section_text, save_page
 
@@ -48,10 +48,17 @@ class MessageState:
         self.reset_char_string()
 
 
+@cache
+def get_character_sex_strings() -> dict[str, list[str]]:
+    file = lua_root / "game/ui/avg/_en/preset/avguitext.lua"
+    data = load_lua_table(file)
+    return data["SEX"]
+
+
 def process_text(text: str) -> str:
-    text = text.replace("==PLAYER_NAME==", "[username]")
-    text = re.subn("~~(?=~)", "~~<nowiki/>", text)[0]
-    text = text.replace(r"\226\128\148", "—")
+    sex_dict = get_character_sex_strings()
+    text, _ = re.subn(r"==SEX\d*==", lambda m: "/".join(sex_dict[m.group(0)]), text)
+    text = escape_text(text)
     return text
 
 

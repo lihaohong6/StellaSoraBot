@@ -8,6 +8,7 @@ from wikitextparser import parse, Template
 
 from character_info.characters import get_characters, get_character_pages, get_id_to_char, Character
 from utils.data_utils import autoload, assets_root
+from utils.text_utils import escape_text
 from utils.upload_utils import UploadRequest, process_uploads
 from utils.wiki_utils import force_section_text, save_page, set_arg
 
@@ -32,7 +33,7 @@ def get_affinity_archives() -> dict[str, list[AffinityArchive]]:
                 break
             row = data[key]
             content = row['Content']
-            content = content.replace("\n", "<br/>").replace("==PLAYER_NAME==", "<player name>")
+            content = escape_text(content)
             filename = ""
             if "acrchives_certified" in content:
                 filename = "certified"
