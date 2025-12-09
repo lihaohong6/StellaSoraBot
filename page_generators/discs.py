@@ -1,5 +1,6 @@
 import json
 import re
+import subprocess
 from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
@@ -10,6 +11,7 @@ from wikitextparser import parse, Template
 
 from character_info.audio import wav_to_ogg
 from character_info.characters import ElementType
+from unpack.unpack_main import unity_asset_dir_1
 from utils.data_utils import autoload, load_json, assets_root, temp_dir
 from utils.skill_utils import skill_escape
 from utils.upload_utils import UploadRequest, process_uploads
@@ -316,7 +318,8 @@ def create_disc_pages():
 
 @cache
 def parse_disc_txtp() -> dict[int, int]:
-    p = Path("assets/audio/txtp")
+    p = unity_asset_dir_1 / "txtp"
+    assert p.exists()
     result: dict[int, int] = {}
     for f in p.glob("*.txtp"):
         m = re.search(r"1640212992=(\d+)\)", f.name)
@@ -325,12 +328,44 @@ def parse_disc_txtp() -> dict[int, int]:
         hash_value = int(m.group(1))
         with open(f, "r", encoding="utf-8") as f2:
             content = f2.read()
-        m = re.search(r"/(\d+)\.wem", content)
+        m = re.search(r"/(\d+)\.(media\.)?wem", content)
         if not m:
             continue
         file_name = int(m.group(1))
         result[hash_value] = file_name
+    assert len(result) > 10
     return result
+
+
+def audio_duration(path: Path) -> float | None:
+    result = subprocess.run(
+        ['ffprobe',
+         '-v', 'error',  # Only output errors
+         '-show_entries', 'format=duration',  # Show only the duration entry in the format section
+         '-of', 'json',  # Output in JSON format
+         path],
+        capture_output=True,
+        text=True,
+        check=True,  # Raise an exception for non-zero return codes
+        encoding='utf-8'
+    )
+
+    # Parse the JSON output
+    data = json.loads(result.stdout)
+
+    # Extract the duration from the format section
+    duration_str = data.get('format', {}).get('duration')
+
+    if duration_str:
+        return float(duration_str)
+    return None
+
+
+def txtp_to_wav(txtp: Path, wav: Path):
+    subprocess.run(['vgmstream-cli', txtp.absolute(), "-o", wav.absolute()],
+                   check=True,
+                   stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL)
 
 
 def upload_disc_bgms():
@@ -346,16 +381,27 @@ def upload_disc_bgms():
     hash_to_file_name = parse_disc_txtp()
     discs = get_discs()
     upload_requests = []
+    audio_dir = Path(f"assets/audio")
+    ogg_dir = audio_dir / "ogg"
+    ogg_dir.mkdir(parents=True, exist_ok=True)
     for disc in discs.values():
         vo_file = f"outfit_{disc.disc_bg}"
         hashed = wwise_fnv_hash(vo_file)
         file_name = hash_to_file_name.get(hashed)
         assert file_name is not None
-        source_wav = Path(f"assets/audio/{file_name}.media.wav")
+        source_wav = audio_dir / f"{file_name}.media.wav"
         assert source_wav.exists()
-        source_ogg = temp_dir / source_wav.with_suffix(".ogg").name
+        source_ogg = ogg_dir / f"BGM {disc.name}.ogg"
         if not source_ogg.exists():
+            if audio_duration(source_wav) < 40:
+                print(f"WARNING: {disc.name} with hash {hashed} and source {file_name} is too short")
+                txtp = unity_asset_dir_1 / "txtp" / f"Music_Outfit (2212414290=440766949)(1640212992={hashed}).txtp"
+                assert txtp.exists()
+                source_wav.unlink()
+                txtp_to_wav(txtp, source_wav)
+                assert source_wav.exists()
             wav_to_ogg(source_wav, source_ogg)
+
         upload_requests.append(UploadRequest(
             source_ogg,
             f"BGM_{disc.name}.ogg",
@@ -376,4 +422,4 @@ def update_disc_all():
 
 
 if __name__ == '__main__':
-    update_disc_all()
+    upload_disc_bgms()
