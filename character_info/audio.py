@@ -6,7 +6,7 @@ from pathlib import Path
 from pywikibot import Page
 from wikitextparser import Template
 
-from character_info.characters import Character, get_characters, get_character_pages, get_id_to_char
+from character_info.characters import Character, get_characters, get_character_pages
 from utils.data_utils import autoload, load_json_from_path, en_root, jp_root, audio_wav_root, temp_dir, cn_root
 from utils.upload_utils import UploadRequest, process_uploads
 from utils.wiki_utils import save_page

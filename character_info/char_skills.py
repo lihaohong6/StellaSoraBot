@@ -7,10 +7,11 @@ from pathlib import Path
 from wikitextparser import parse, Template
 
 from character_info.characters import get_id_to_char, get_character_pages, ElementType, common_name_to_element_type
-from utils.data_utils import autoload, load_json, data_root, assets_root
+from utils.data_utils import autoload, load_json, assets_root
 from utils.skill_utils import skill_escape, get_effects, Effect
 from utils.upload_utils import UploadRequest, process_uploads
 from utils.wiki_utils import force_section_text, set_arg, save_page
+
 
 class SkillParamType(Enum):
     NONE = 0

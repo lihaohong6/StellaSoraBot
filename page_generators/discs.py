@@ -11,7 +11,7 @@ from wikitextparser import parse, Template
 
 from character_info.audio import wav_to_ogg
 from character_info.characters import ElementType
-from unpack.unpack_paths import unity_asset_dir_1
+from unpack.unpack_paths import disc_bgm_wem_dir
 from utils.data_utils import autoload, load_json, assets_root, temp_dir
 from utils.skill_utils import skill_escape
 from utils.upload_utils import UploadRequest, process_uploads
@@ -318,7 +318,7 @@ def create_disc_pages():
 
 @cache
 def parse_disc_txtp() -> dict[int, int]:
-    p = unity_asset_dir_1 / "txtp"
+    p = disc_bgm_wem_dir / "txtp"
     assert p.exists()
     result: dict[int, int] = {}
     for f in p.glob("*.txtp"):
@@ -364,6 +364,7 @@ def audio_duration(path: Path) -> float | None:
 def txtp_to_wav(txtp: Path, wav: Path):
     subprocess.run(['vgmstream-cli', txtp.absolute(), "-o", wav.absolute()],
                    check=True,
+                   cwd=txtp.parent,
                    stdout=subprocess.DEVNULL,
                    stderr=subprocess.DEVNULL)
 
@@ -391,15 +392,15 @@ def upload_disc_bgms():
         if file_name is None:
             print(f"ERROR: {disc.name} has no txtp file for hash {hashed}")
             continue
-        source_wav = audio_dir / f"{file_name}.media.wav"
+        source_wav = audio_dir / f"{file_name}.wav"
         assert source_wav.exists()
         source_ogg = ogg_dir / f"BGM {disc.name}.ogg"
         if not source_ogg.exists():
             if audio_duration(source_wav) < 40:
                 print(f"WARNING: {disc.name} with hash {hashed} and source {file_name} is too short")
-                txtp = unity_asset_dir_1 / "txtp" / f"Music_Outfit (2212414290=440766949)(1640212992={hashed}).txtp"
+                txtp = disc_bgm_wem_dir / "txtp" / f"Music_Outfit (2212414290=440766949)(1640212992={hashed}).txtp"
                 assert txtp.exists()
-                source_wav.unlink()
+                source_wav = temp_dir / f"{file_name}.wav"
                 txtp_to_wav(txtp, source_wav)
                 assert source_wav.exists()
             wav_to_ogg(source_wav, source_ogg)

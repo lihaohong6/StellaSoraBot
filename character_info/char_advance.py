@@ -3,7 +3,7 @@ from functools import cache
 
 from wikitextparser import Template, parse
 
-from character_info.characters import get_character_pages, get_characters, Character
+from character_info.characters import get_character_pages, Character
 from page_generators.items import get_all_items, make_item_template
 from utils.data_utils import autoload
 from utils.wiki_utils import set_arg, force_section_text, save_page

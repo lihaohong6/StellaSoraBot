@@ -7,11 +7,11 @@ from pathlib import Path
 from typing import Callable, TypeVar
 
 import UnityPy
-import requests
 from UnityPy import Environment
 from UnityPy.files import ObjectReader
 
-from unpack.unpack_paths import data_dir, sound_dir, unity_asset_dir_1, unity_asset_dir_2, text_dir, vendor_library_dir
+from unpack.unpack_paths import data_dir, sound_dir, unity_asset_dir_1, unity_asset_dir_2, text_dir, vendor_library_dir, \
+    disc_bgm_wem_dir
 from utils.data_utils import audio_wav_root
 
 assert data_dir.exists() and unity_asset_dir_1.exists() and text_dir.exists()
@@ -87,13 +87,15 @@ def wem_to_wav(wem_path: Path, wav_path: Path):
 def export_audio():
     target_dir = audio_wav_root
     target_dir.mkdir(parents=True, exist_ok=True)
-    for f in list(sound_dir.iterdir()) + list(unity_asset_dir_1.glob("*.wem")):
+    for f in (list(sound_dir.rglob("*.wem")) +
+              list(unity_asset_dir_1.glob("*.wem"))):
         if not f.is_file() or not f.name.endswith(".wem"):
             continue
         source = f
-        target = target_dir / f.name.replace(".wem", ".wav")
+        target = target_dir / f.with_suffix(".wav").name
         if not target.exists():
             wem_to_wav(source, target)
+            print(target.name, "saved")
 
 
 def export_text():
@@ -135,10 +137,11 @@ def build_fk_stella_sora(unpacker_dir: Path = vendor_library_dir / "fkStellaSora
 def export_lua():
     unpacker_dir = build_fk_stella_sora()
     lua_source = data_dir / "Persistent_Store/Scripts/lua.arcx"
+    lua_source_dir = lua_source.parent / "luaUnpack"
+    shutil.rmtree(lua_source_dir, ignore_errors=True)
     subprocess.run(['./ArchiveParser/bin/Debug/net8.0/ArchiveParser', lua_source],
                    check=True,
                    cwd=unpacker_dir)
-    lua_source_dir = lua_source.parent / "luaUnpack"
     assert lua_source_dir.exists() and lua_source_dir.is_dir()
     subprocess.run(['python', 'decompile.py', lua_source_dir], check=True, cwd=unpacker_dir / "Luadec")
     lua_source_dir = lua_source_dir.parent / "luaUnpackdec"
@@ -195,9 +198,14 @@ def export_disc_txtp():
     assert wwiser_path.exists()
     executable_path = wwiser_path / "wwiser.pyz"
     assert executable_path.exists()
+    bnk_path = sound_dir / "Music_Outfit.bnk"
+    assert bnk_path.exists()
+    assert disc_bgm_wem_dir.exists()
     subprocess.run(["python", executable_path.absolute(),
-                    "--txtp", "Music_Outfit.bnk"],
-                   check=True, cwd=unity_asset_dir_1)
+                    "--txtp", bnk_path.absolute()],
+                   check=True, cwd=disc_bgm_wem_dir)
+    subprocess.run(["fd", "-e", "txtp", "-x", "sed", "-i", "-E", r's|wem/([0-9]+)\.wem|../\1.media.wem|g'],
+                   check=True, cwd=disc_bgm_wem_dir)
 
 
 def export_all_assets():
