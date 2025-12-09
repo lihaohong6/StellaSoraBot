@@ -45,8 +45,8 @@ def write_prompt_data(prompts: list[SlopFile]) -> None:
 
 
 def main():
-    data = get_matching_prompt_data("Nazuna")
-    data.append(SlopFile(
+    data = get_matching_prompt_data("Nazuka")
+    data.insert(0, SlopFile(
         "The story of Stella Sora occurs on the Nova Continent. People known as Trekkers climb Monoliths, large"
         "structures with lots of monster known as Stellaroids. As their reward, Trekkers can make wishes to the"
         "Monolith. They lost a piece of memory in exchange for an item from the Monolith.",
