@@ -184,11 +184,15 @@ class UnityJsonEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-def main():
+def export_all_assets():
     generate_dummy_dll()
     export_images()
     export_audio()
     export_lua()
+
+
+def main():
+    export_all_assets()
 
 
 if __name__ == "__main__":

@@ -388,7 +388,9 @@ def upload_disc_bgms():
         vo_file = f"outfit_{disc.disc_bg}"
         hashed = wwise_fnv_hash(vo_file)
         file_name = hash_to_file_name.get(hashed)
-        assert file_name is not None
+        if file_name is None:
+            print(f"ERROR: {disc.name} has no txtp file for hash {hashed}")
+            continue
         source_wav = audio_dir / f"{file_name}.media.wav"
         assert source_wav.exists()
         source_ogg = ogg_dir / f"BGM {disc.name}.ogg"
@@ -422,4 +424,4 @@ def update_disc_all():
 
 
 if __name__ == '__main__':
-    upload_disc_bgms()
+    update_disc_all()

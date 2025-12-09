@@ -176,18 +176,22 @@ def get_private_messages() -> dict[str, CharacterMessages]:
     result: dict[str, CharacterMessages] = {}
     for char_name, char in get_characters().items():
         pm_path = pm_root / f"pm{char.id}01.lua"
-        assert pm_path.exists()
+        if not pm_path.exists():
+            print(f"ERROR: {char_name}'s PM file {pm_path} does not exist")
+            continue
         data = load_lua_table(pm_path)
         messages = parse_private_messages(char, data)
         result[char_name] = messages
     return result
 
 
-def update_private_messages() -> None:
+def save_private_message_pages() -> None:
     messages = get_private_messages()
     for char, page in get_story_pages().items():
         parsed = parse(page.text)
         result = []
+        if char.name not in messages:
+            continue
         for index, conversation in enumerate(messages[char.name].messages, 1):
             lines = [
                 "{{ToggleChat",
@@ -232,11 +236,18 @@ def upload_phone_pictures():
     process_uploads(upload_requests)
 
 
-def main():
+def update_private_messages() -> None:
     upload_emojis()
     upload_phone_pictures()
+    save_private_message_pages()
+
+
+def main():
     update_private_messages()
 
+
+if __name__ == "__main__":
+    main()
 
 if __name__ == "__main__":
     main()
