@@ -7,17 +7,13 @@ from pathlib import Path
 from typing import Callable, TypeVar
 
 import UnityPy
+import requests
 from UnityPy import Environment
 from UnityPy.files import ObjectReader
 
+from unpack.unpack_paths import data_dir, sound_dir, unity_asset_dir_1, unity_asset_dir_2, text_dir, vendor_library_dir
 from utils.data_utils import audio_wav_root
 
-data_dir = Path(
-    "~/.var/app/com.usebottles.bottles/data/bottles/bottles/Stella-Sora/drive_c/YostarGames/StellaSora_EN").expanduser()
-sound_dir = data_dir / "Persistent_Store/SoundBanks"
-unity_asset_dir_1 = data_dir / "StellaSora_Data/StreamingAssets/InstallResource"
-unity_asset_dir_2 = data_dir / "Persistent_Store/AssetBundles"
-text_dir = data_dir / "Persistent_Store/AssetBundles"
 assert data_dir.exists() and unity_asset_dir_1.exists() and text_dir.exists()
 
 T = TypeVar("T")
@@ -125,9 +121,11 @@ def export_text():
                 print(f"Failed to save {path}: {e}")
 
 
-def build_fk_stella_sora(unpacker_dir: Path = Path("fkStellaSora")) -> Path:
+def build_fk_stella_sora(unpacker_dir: Path = vendor_library_dir / "fkStellaSora") -> Path:
     if not unpacker_dir.exists():
-        subprocess.run(['git', 'clone', 'https://github.com/shiikwi/fkStellaSora'], check=True)
+        subprocess.run(['git', 'clone', 'https://github.com/shiikwi/fkStellaSora'],
+                       check=True,
+                       cwd=vendor_library_dir)
     assert unpacker_dir.exists() and unpacker_dir.is_dir()
     subprocess.run(["git", "pull"], check=True, cwd=unpacker_dir)
     subprocess.run(['dotnet', 'build'], check=True, cwd=unpacker_dir)
@@ -184,11 +182,30 @@ class UnityJsonEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
+def export_disc_txtp():
+    wwiser_path = vendor_library_dir / "wwiser"
+    if not wwiser_path.exists():
+        wwiser_path.mkdir(exist_ok=True, parents=True)
+        subprocess.run([
+            "gh", "release", "download", "v20250928",
+            "--repo", "bnnm/wwiser",
+            "--pattern", "wwiser.pyz",
+            "--pattern", "wwnames.db3"
+        ], check=True, cwd=wwiser_path)
+    assert wwiser_path.exists()
+    executable_path = wwiser_path / "wwiser.pyz"
+    assert executable_path.exists()
+    subprocess.run(["python", executable_path.absolute(),
+                    "--txtp", "Music_Outfit.bnk"],
+                   check=True, cwd=unity_asset_dir_1)
+
+
 def export_all_assets():
     generate_dummy_dll()
     export_images()
     export_audio()
     export_lua()
+    export_disc_txtp()
 
 
 def main():
@@ -196,4 +213,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    export_all_assets()

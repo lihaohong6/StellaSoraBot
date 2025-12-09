@@ -5,7 +5,9 @@ from typing import Any, Callable
 
 from slpp import slpp
 
-data_root = Path("StellaSoraData")
+from unpack.unpack_paths import vendor_library_dir
+
+data_root = vendor_library_dir / "StellaSoraData"
 jp_root = data_root / "JP"
 cn_root = data_root / "CN"
 en_root = data_root / "EN"

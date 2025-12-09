@@ -11,7 +11,7 @@ from wikitextparser import parse, Template
 
 from character_info.audio import wav_to_ogg
 from character_info.characters import ElementType
-from unpack.unpack_main import unity_asset_dir_1
+from unpack.unpack_paths import unity_asset_dir_1
 from utils.data_utils import autoload, load_json, assets_root, temp_dir
 from utils.skill_utils import skill_escape
 from utils.upload_utils import UploadRequest, process_uploads

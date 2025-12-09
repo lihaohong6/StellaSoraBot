@@ -1,4 +1,3 @@
-/StellaSoraData
 /.idea
 *.ctrl
 *.lwp
@@ -7,4 +6,4 @@ user-passwords.py
 __pycache__/
 /assets
 sandbox.py
-/fkStellaSora
+/vendor
