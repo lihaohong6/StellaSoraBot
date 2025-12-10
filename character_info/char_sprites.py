@@ -3,14 +3,16 @@ import re
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
+from unittest import skipIf
 
 from PIL import Image
-from wikitextparser import Template
+from wikitextparser import Template, parse
 
 from character_info.characters import id_to_char, Character, get_character_pages
 from utils.data_utils import assets_root, sprite_root, load_lua_table, lua_root
 from utils.upload_utils import UploadRequest, process_uploads
-from utils.wiki_utils import save_json_page, set_arg, save_page, PageCreationRequest, process_page_creation_requests
+from utils.wiki_utils import save_json_page, set_arg, save_page, PageCreationRequest, process_page_creation_requests, \
+    find_template_by_name, find_templates_by_name, force_section_text
 
 
 @dataclass
@@ -113,12 +115,13 @@ variant_whitelist: dict[str, set[str]] = {
     "Claire": {"a"},
     "Coronis": {"a"},
     "Cosette": {"a", "b"},
+    "Darcia": {"a"},
     "Donna": {"a"},
     "Eleanor": {"b"},
     "Fannie": {"a"},
     "Feagin": {"a"},
     "Female tyrant": {"a", "b", "c", "f", "g", "h", "i", },
-    "Firenze": {"c"},
+    "Firenze": {"c", "d"},
     "Flora": {"b"},
     "Freesia": {"a", "b"},
     "Fuyuka": {"a"},
@@ -128,7 +131,7 @@ variant_whitelist: dict[str, set[str]] = {
     "Isaki": {"a"},
     "Jinglin": {"a"},
     "Kaede": {"a"},
-    "Karin": {"a", "d"},
+    "Karin": {"a", "b", "c", "d"},
     "Kaydoke": {"a"},
     "Kasimira": {"a"},
     "Lady Gray": {"a"},
@@ -139,7 +142,7 @@ variant_whitelist: dict[str, set[str]] = {
     "Minova": {"a", "b"},
     "Mistique": {"a", "c"},
     "Nanoha": {"a", "b"},
-    "Nazuka": {"a", },
+    "Nazuka": {"a", "c"},
     "Nazuna": {"a", "b"},
     "Neuvira": {"a", },
     "Noya": {"a", "b", "d", "e", },
@@ -150,7 +153,7 @@ variant_whitelist: dict[str, set[str]] = {
     "Ridge": {"a"},
     "Sapphire": {"a"},
     "Serena": {"a"},
-    "Shia": {"a", },
+    "Shia": {"a", "b"},
     "Shimiao": {"a"},
     "Teresa": {"a"},
     "Tilia": {"a", "b", "c", "d", "e", },
@@ -284,10 +287,12 @@ def upload_sprites():
     save_json_page("Module:Sprite/data.json", json_data, summary="update json page")
 
 
-def sprites_to_template(char: str, sprites: dict[str, list[Sprite]]) -> str:
+def sprites_to_template(char: str, sprites: dict[str, list[Sprite]], skip: set[str]) -> str:
     result = []
     sprites = dict((k, v) for k, v in sprites.items() if len(v) > 0)
     for variant_name in sprites.keys():
+        if variant_name in skip:
+            continue
         t = Template("{{Sprite\n}}")
         set_arg(t, "char", char)
         set_arg(t, "variant", variant_name)
@@ -300,15 +305,27 @@ def sprites_to_template(char: str, sprites: dict[str, list[Sprite]]) -> str:
 
 
 def create_gallery_pages():
-    sprites = get_char_sprites()
+    all_sprites = get_char_sprites()
     for char, page in get_character_pages("/gallery", must_exist=False).items():
-        templates = sprites_to_template(char.name, sprites[char.name])
+        char_sprites = all_sprites[char.name]
+        parsed = parse(page.text)
+        sprite_templates = find_templates_by_name(parsed, "Sprite")
+        skip: set[str] = set()
+        for sprite in sprite_templates:
+            variant = sprite.get_arg("variant").value.strip()
+            skip.add(variant)
+        templates = sprites_to_template(char.name, char_sprites, skip)
         if not page.exists():
             save_page(page, f"""{{{{GalleryTop}}}}
 ==Sprites==
 {templates}
 {{{{GalleryBottom}}}}
 """, "batch update gallery page")
+        elif len(char_sprites) - len(skip) > 0:
+            # There are new sprites. Do an incremental update.
+            assert len(sprite_templates) > 0
+            sprite_templates[-1].string = sprite_templates[-1].string.rstrip() + "\n\n" + str(templates)
+            save_page(page, str(parsed), "batch update gallery page")
 
 
 def main():

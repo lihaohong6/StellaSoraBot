@@ -86,6 +86,14 @@ def find_template_by_name(wikitext: WikiText, name: str) -> Template | None:
     return None
 
 
+def find_templates_by_name(wikitext: WikiText, name: str) -> list[Template]:
+    result = []
+    for t in wikitext.templates:
+        if t.name.strip() == name:
+            result.append(t)
+    return result
+
+
 @dataclasses.dataclass
 class PageCreationRequest:
     page: Page | str
