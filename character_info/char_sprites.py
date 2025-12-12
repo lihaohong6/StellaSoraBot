@@ -328,9 +328,12 @@ def create_gallery_pages():
             save_page(page, str(parsed), "batch update gallery page")
 
 
-def main():
+def char_gallery_page():
     upload_sprites()
     create_gallery_pages()
+
+def main():
+    char_gallery_page()
 
 
 if __name__ == '__main__':
