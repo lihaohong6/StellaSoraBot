@@ -316,27 +316,6 @@ def create_disc_pages():
         p.save(summary="batch create disc pages")
 
 
-@cache
-def parse_disc_txtp() -> dict[int, int]:
-    p = disc_bgm_wem_dir / "txtp"
-    assert p.exists()
-    result: dict[int, int] = {}
-    for f in p.glob("*.txtp"):
-        m = re.search(r"1640212992=(\d+)\)", f.name)
-        if not m:
-            continue
-        hash_value = int(m.group(1))
-        with open(f, "r", encoding="utf-8") as f2:
-            content = f2.read()
-        m = re.search(r"/(\d+)\.(media\.)?wem", content)
-        if not m:
-            continue
-        file_name = int(m.group(1))
-        result[hash_value] = file_name
-    assert len(result) > 10
-    return result
-
-
 def audio_duration(path: Path) -> float | None:
     result = subprocess.run(
         ['ffprobe',
@@ -379,30 +358,21 @@ def upload_disc_bgms():
             hash_value = hash_value ^ char
         return hash_value
 
-    hash_to_file_name = parse_disc_txtp()
     discs = get_discs()
     upload_requests = []
     audio_dir = Path(f"assets/audio")
     ogg_dir = audio_dir / "ogg"
     ogg_dir.mkdir(parents=True, exist_ok=True)
     for disc in discs.values():
-        vo_file = f"outfit_{disc.disc_bg}"
-        hashed = wwise_fnv_hash(vo_file)
-        file_name = hash_to_file_name.get(hashed)
-        if file_name is None:
-            print(f"ERROR: {disc.name} has no txtp file for hash {hashed}")
-            continue
-        source_wav = audio_dir / f"{file_name}.wav"
-        assert source_wav.exists()
         source_ogg = ogg_dir / f"BGM {disc.name}.ogg"
         if not source_ogg.exists():
-            if audio_duration(source_wav) < 40:
-                print(f"WARNING: {disc.name} with hash {hashed} and source {file_name} is too short")
-                txtp = disc_bgm_wem_dir / "txtp" / f"Music_Outfit (2212414290=440766949)(1640212992={hashed}).txtp"
-                assert txtp.exists()
-                source_wav = temp_dir / f"{file_name}.wav"
-                txtp_to_wav(txtp, source_wav)
-                assert source_wav.exists()
+            vo_file = f"outfit_{disc.disc_bg}"
+            hashed = wwise_fnv_hash(vo_file)
+            txtp = disc_bgm_wem_dir / "txtp" / f"Music_Outfit (2212414290=440766949)(1640212992={hashed}).txtp"
+            assert txtp.exists()
+            source_wav = temp_dir / f"{hashed}.wav"
+            txtp_to_wav(txtp, source_wav)
+            assert source_wav.exists()
             wav_to_ogg(source_wav, source_ogg)
 
         upload_requests.append(UploadRequest(

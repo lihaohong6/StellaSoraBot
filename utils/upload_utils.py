@@ -58,7 +58,10 @@ class UploadRequest:
     summary: str = "batch upload file"
 
 
-def process_uploads(requests: list[UploadRequest], force: bool = False, **kwargs) -> None:
+def process_uploads(requests: list[UploadRequest],
+                    force: bool = False,
+                    overwrite: bool = False,
+                    **kwargs) -> None:
     for r in requests:
         if isinstance(r.target, str):
             if "File" not in r.target:
@@ -67,7 +70,10 @@ def process_uploads(requests: list[UploadRequest], force: bool = False, **kwargs
     existing = set(p.title() for p in PreloadingGenerator((r.target for r in requests)) if p.exists())
     for r in requests:
         if r.target.title() in existing:
-            continue
+            if overwrite and input(f"Overwrite: {r.target.title()}?") == "y":
+                force = True
+            else:
+                continue
         upload_args = [r.text, r.target, r.summary]
         url = None
         file = None

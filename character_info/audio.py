@@ -98,7 +98,7 @@ def get_audio() -> dict[int, list[AudioLine]]:
 
 
 def wav_to_ogg(wav_path: Path, ogg_path: Path) -> Path:
-    subprocess.run(["ffmpeg", "-i", wav_path, "-c:a", "libopus", "-y", ogg_path],
+    subprocess.run(["ffmpeg", "-i", wav_path, "-c:a", "libopus", "-b:a", "128k", "-y", ogg_path],
                    check=True,
                    stdout=subprocess.DEVNULL,
                    stderr=subprocess.DEVNULL
