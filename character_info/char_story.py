@@ -18,10 +18,23 @@ class AffinityArchive:
     id: int
     title: str
     content: str
+    updated_content: str | None = None
 
 
 @cache
 def get_affinity_archives() -> dict[str, list[AffinityArchive]]:
+
+    def add_archive_file(c: str) -> str:
+        filename = ""
+        if "acrchives_certified" in c:
+            filename = "certified"
+        if "acrchives_falsified" in c:
+            filename = "falsified"
+        if filename != "":
+            repl = f"[[File:Archive {filename}.png|30px|link=]]"
+            c = re.sub("<sprite[^>]+>", repl, c)
+        return c
+
     chars = get_characters()
     result = {}
     data = autoload("CharacterArchiveContent")
@@ -34,18 +47,18 @@ def get_affinity_archives() -> dict[str, list[AffinityArchive]]:
             row = data[key]
             content = row['Content']
             content = escape_text(content)
-            filename = ""
-            if "acrchives_certified" in content:
-                filename = "certified"
-            if "acrchives_falsified" in content:
-                filename = "falsified"
-            if filename != "":
-                repl = f"[[File:Archive {filename}.png|30px|link=]]"
-                content = re.sub("<sprite[^>]+>", repl, content)
+            content = add_archive_file(content)
+            updated_content = row['UpdateContent1']
+            if key in updated_content:
+                updated_content = None
+            else:
+                updated_content = escape_text(updated_content)
+                updated_content = add_archive_file(updated_content)
             lst.append(AffinityArchive(
                 id=row['Id'],
                 title=row['Title'],
-                content=content
+                content=content,
+                updated_content=updated_content,
             ))
         else:
             result[name] = lst
@@ -129,8 +142,10 @@ def get_invitation_stories() -> dict[str, list[InvitationStory]]:
 def affinity_archive_sections(stories: list[AffinityArchive]) -> str:
     result = []
     for story in stories:
-        result.append("{{Collapse|1=" + story.title + "|2=" + story.content + "}}\n")
-    return "\n".join(result)
+        result.append("{{Collapse|1=" + story.title + "|2=" + story.content + "}}")
+        if story.updated_content:
+            result.append("{{Collapse|1=" + story.title + " (updated)|2=" + story.updated_content + "}}")
+    return "\n\n".join(result) + "\n"
 
 
 def upload_invitation_story_images() -> None:

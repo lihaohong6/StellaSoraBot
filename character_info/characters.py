@@ -81,9 +81,14 @@ def get_characters() -> dict[str, Character]:
             ("rate", "08")
         ]
         for attr, num in pairs:
-            value = base_info.get(f"{c.id}{num}", {}).get('Content', None)
-            if value:
-                setattr(c, attr, value)
+            key = f"{c.id}{num}"
+            value = base_info.get(key, {}).get('Content', None)
+            if not value:
+                continue
+            update_content = base_info[key]["UpdateContent1"]
+            if key not in update_content:
+                value = f"Original: {value}\nUpdated: {update_content}"
+            setattr(c, attr, value)
         c.element = ElementType(v['EET'])
         if c.affiliation == "???":
             continue
