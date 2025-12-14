@@ -40,7 +40,7 @@ def force_section_text(wikitext: WikiText, section_title: str, text: str, prepen
     return False
 
 
-def save_page(page: Page | str, text, summary: str = "update page"):
+def save_page(page: Page | str, text: str, summary: str = "update page"):
     if isinstance(page, str):
         page = Page(s, page)
     if page.text.strip() != text.strip():
@@ -101,7 +101,7 @@ class PageCreationRequest:
     summary: str
 
 
-def process_page_creation_requests(request_list: list[PageCreationRequest]) -> None:
+def process_page_creation_requests(request_list: list[PageCreationRequest], overwrite: bool = False) -> None:
     title_to_request: dict[str, PageCreationRequest] = {}
     for r in request_list:
         if isinstance(r.page, str):
@@ -109,6 +109,8 @@ def process_page_creation_requests(request_list: list[PageCreationRequest]) -> N
         title_to_request[r.page.title()] = r
     gen = PreloadingGenerator(r.page for r in request_list)
     for page in gen:
+        if not overwrite and page.exists():
+            continue
         r = title_to_request.get(page.title(), None)
         assert r is not None
         save_page(page, r.text, r.summary)

@@ -3,6 +3,7 @@ from pathlib import Path
 
 from character_info.audio import generate_audio_page
 from character_info.char_advance import update_character_advancement_material
+from character_info.char_gifts import gifts_main
 from character_info.char_images import upload_char_images
 from character_info.char_infobox import update_infobox
 from character_info.char_skills import upload_skill_icons, update_skills
@@ -20,6 +21,7 @@ def update_character_page():
     upload_skill_icons()
     update_skills()
     update_character_advancement_material()
+    gifts_main()
     update_character_stories()
     update_private_messages()
     char_gallery_page()

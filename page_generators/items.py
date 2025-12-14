@@ -7,7 +7,7 @@ from wikitextparser import Template
 
 from utils.data_utils import autoload, assets_root
 from utils.upload_utils import UploadRequest, process_uploads
-from utils.wiki_utils import set_arg, s, save_page
+from utils.wiki_utils import set_arg, s, save_page, PageCreationRequest, process_page_creation_requests
 
 
 @dataclass
@@ -27,13 +27,15 @@ class Item:
         return "Icon " + self.title.lower() + ".png"
 
 
-def make_item_page_template(item: Item) -> Template:
+def make_item_page_template(item: Item, category: str | None) -> Template:
     t = Template("{{ItemData\n}}")
     set_arg(t, "id", item.id)
     set_arg(t, "name", item.title)
     set_arg(t, "icon", item.file_page())
     set_arg(t, "rarity", item.rarity)
-    set_arg(t, "itemdesc", item.desc)
+    set_arg(t, "itemdesc", item.desc + "<br/>" + item.literary)
+    if category:
+        set_arg(t, "category", category)
     return t
 
 
@@ -63,23 +65,26 @@ def get_all_items() -> dict[int, Item]:
     return result
 
 
-def make_item_pages(ids: list[int], overwrite: bool = False) -> None:
+def make_item_pages(ids: list[int], content: str = "is an item.", overwrite: bool = False, category: str | None = None) -> None:
     items = get_all_items()
+    page_save_requests = []
     upload_requests = []
     for item_id in ids:
         item = items[item_id]
-        t = make_item_page_template(item)
-        text = str(t) + "\n\n" + f"'''{item.title}''' is an item in [[Stella Sora]]."
-        p = Page(s, item.title)
-        if not overwrite and p.exists():
-            continue
-        save_page(p, text, "batch create item pages")
+        t = make_item_page_template(item, category=category)
+        text = str(t) + "\n\n" + f"'''{item.title}''' {content}"
+        page_save_requests.append(PageCreationRequest(
+            item.title,
+            text,
+            "batch create item pages"
+        ))
         upload_requests.append(UploadRequest(
             item.file_path(),
             item.file_page(),
             "[[Category:Item icons]]",
             "Batch upload item icons"))
     process_uploads(upload_requests)
+    process_page_creation_requests(page_save_requests, overwrite=True)
 
 
 def main():

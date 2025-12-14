@@ -113,7 +113,8 @@ def get_id_to_char() -> dict[int, Character]:
     return dict((c.id, c) for c in chars.values())
 
 
-def id_to_char(char_id: int) -> Character | None:
+def id_to_char(char_id: int | str) -> Character | None:
+    char_id = int(char_id)
     return get_id_to_char().get(char_id, None)
 
 
