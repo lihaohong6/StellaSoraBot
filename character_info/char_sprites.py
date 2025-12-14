@@ -3,16 +3,15 @@ import re
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
-from unittest import skipIf
 
 from PIL import Image
 from wikitextparser import Template, parse
 
-from character_info.characters import id_to_char, Character, get_character_pages
+from character_info.characters import id_to_char, Character, get_character_pages, get_characters
 from utils.data_utils import assets_root, sprite_root, load_lua_table, lua_root
 from utils.upload_utils import UploadRequest, process_uploads
 from utils.wiki_utils import save_json_page, set_arg, save_page, PageCreationRequest, process_page_creation_requests, \
-    find_template_by_name, find_templates_by_name, force_section_text
+    find_templates_by_name
 
 
 @dataclass
@@ -70,7 +69,10 @@ def compose(base: Sprite, top: Sprite, out: Path) -> None:
     base_image = Image.open(base.source).convert("RGBA")
     top_image = Image.open(top.source).convert("RGBA")
 
-    offset_x, offset_y = compute_offsets(base.json_data, top.json_data)
+    if base_image.size == top_image.size:
+        offset_x, offset_y = 0, 0
+    else:
+        offset_x, offset_y = compute_offsets(base.json_data, top.json_data)
     overlay_layer = Image.new("RGBA", base_image.size, (0, 0, 0, 0))
     overlay_layer.paste(top_image, (offset_x, offset_y))
     combined = Image.alpha_composite(base_image, overlay_layer)
@@ -191,28 +193,33 @@ def get_avg_characters() -> tuple[dict[str, AvgCharacter], dict[str, str]]:
     return result, reuse_table
 
 
+def find_sprites_in_dir(variant_dir: Path, variant_name: str) -> list[Sprite]:
+    sprites = []
+    for f in variant_dir.glob("*.png"):
+        m = re.search(r"_(\d{3})\.", f.name)
+        if not m:
+            continue
+        num = int(m.group(1))
+        json_file = f.with_suffix(".json")
+        if not json_file.exists():
+            print(f"skipping {variant_name}/{f.name} because the json file does not exist")
+            continue
+        sprites.append(Sprite(num, f, retrieve_sprite_json_data(json_file)))
+    sprites.sort(key=lambda s: s.number)
+    return sprites
+
+
 def process_char_sprites(char: Character | AvgCharacter, char_dir: Path) -> dict[str, list[Sprite]]:
     image_dir = char_dir / "atlas_png"
     images: dict[str, list[Sprite]] = {}
     for variant_dir in image_dir.iterdir():
         if not variant_dir.is_dir():
             continue
-        sprites = []
         variant_name = variant_dir.name
-        images[variant_name] = sprites
-        for f in variant_dir.glob("*.png"):
-            m = re.search(r"_(\d{3})\.", f.name)
-            if not m:
-                continue
-            num = int(m.group(1))
-            json_file = f.with_suffix(".json")
-            if not json_file.exists():
-                print(f"skipping {variant_name}/{f.name} because the json file does not exist")
-                continue
-            sprites.append(Sprite(num, f, retrieve_sprite_json_data(json_file)))
-        sprites.sort(key=lambda s: s.number)
+        sprites = find_sprites_in_dir(variant_dir, variant_name)
         if len(sprites) == 0:
             continue
+        images[variant_name] = sprites
         process_assets(sprites, char, variant_name)
     return images
 
@@ -239,7 +246,32 @@ def export_sprites() -> dict[str, dict[str, list[Sprite]]]:
         if char.name in char_sprites:
             continue
         char_sprites[char.name] = process_char_sprites(char, char_dir)
+    root2 = assets_root / "actor2d/character"
+    assert root2.exists()
+    for char_name, char in get_characters().items():
+        for dir_suffix, variant_name in [('02', 'awakened'), ('03', 'skin1')]:
+            char_dir = root2 / f'{char.id}{dir_suffix}' / 'atlas_png' / 'a'
+            if not char_dir.exists():
+                continue
+            sprites = find_sprites_in_dir(char_dir, variant_name)
+            if len(sprites) == 0:
+                continue
+            char_sprites[char.name][variant_name] = sprites
+            process_assets(sprites, char, variant_name)
     return char_sprites
+
+
+def filter_sprites(char_name: str, sprite_dict: dict[str, list[Sprite]]) -> dict[str, list[Sprite]]:
+    result = {}
+    for variant in sorted(sprite_dict.keys()):
+        if len(variant) == 1 and variant not in variant_whitelist[char_name]:
+            continue
+        sprites = sprite_dict[variant]
+        # Manually exclude a bad image
+        if char_name == "Tilia" and variant == "awakened":
+            sprites = [sp for sp in sprites if sp.number != 4]
+        result[variant] = sprites
+    return result
 
 
 @cache
@@ -249,11 +281,7 @@ def get_char_sprites() -> dict[str, dict[str, list[Sprite]]]:
     for char_name, sprite_dict in sprites.items():
         if char_name not in variant_whitelist:
             continue
-        result[char_name] = dict(
-            (variant, sprite_dict[variant])
-            for variant in sorted(sprite_dict.keys())
-            if variant in variant_whitelist[char_name]
-        )
+        result[char_name] = filter_sprites(char_name, sprite_dict)
     return result
 
 
@@ -283,7 +311,7 @@ def upload_sprites():
             summary="create sprite categories"
         ))
     process_uploads(upload_requests)
-    process_page_creation_requests(page_creation_requests)
+    process_page_creation_requests(page_creation_requests, overwrite=True)
     save_json_page("Module:Sprite/data.json", json_data, summary="update json page")
 
 
@@ -296,7 +324,10 @@ def sprites_to_template(char: str, sprites: dict[str, list[Sprite]], skip: set[s
         t = Template("{{Sprite\n}}")
         set_arg(t, "char", char)
         set_arg(t, "variant", variant_name)
-        name = f"Variant {variant_name.upper()}"
+        if len(variant_name) == 1:
+            name = f"Variant {variant_name.upper()}"
+        else:
+            name = variant_name.capitalize()
         if len(sprites) == 1:
             name = "Default"
         set_arg(t, "name", name)
@@ -331,6 +362,7 @@ def create_gallery_pages():
 def char_gallery_page():
     upload_sprites()
     create_gallery_pages()
+
 
 def main():
     char_gallery_page()
