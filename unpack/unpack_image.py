@@ -6,22 +6,25 @@ from UnityPy import Environment
 from UnityPy.enums import ClassIDType
 from UnityPy.files import ObjectReader
 
-from unpack.unpack_paths import unity_asset_dir_1, unity_asset_dir_2
-from unpack.unpack_utils import UnityJsonEncoder, asset_map
+from unpack.unpack_utils import UnityJsonEncoder, asset_map, get_unity3d_files
 
 
-def image_export(obj: ObjectReader, _: Environment, type_filter: ClassIDType) -> None:
+def image_export(obj: ObjectReader, _: Environment, type_filter: ClassIDType | None) -> None:
     if not obj.container:
         return
-    if obj.type != type_filter:
+    if type_filter and obj.type != type_filter:
         return
     if not obj.container.endswith("png"):
         return
-    if "lightmap" in obj.container:
+    exclude_patterns = ['/ui/', '/fonts/', 'lightmap', '/ui_gachacover/commonfx/']
+    if any(pat in obj.container for pat in exclude_patterns):
         return
-    image_exported = export_image(obj, overwrite=type_filter == ClassIDType.Texture2D)
+    path = Path(obj.container)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Prefer sprites over tex2d
+    image_exported = export_image(obj, path, overwrite=type_filter == ClassIDType.Sprite)
     if image_exported and obj.type == ClassIDType.Sprite:
-        export_image_metadata(obj)
+        export_image_metadata(obj, path.with_suffix(".json"))
 
 
 def texture2d_export(obj: ObjectReader, env: Environment) -> None:
@@ -32,9 +35,7 @@ def sprite_export(obj: ObjectReader, env: Environment) -> None:
     image_export(obj, env, ClassIDType.Sprite)
 
 
-def export_image(obj: ObjectReader, overwrite: bool = True) -> bool:
-    path = Path(obj.container)
-    path.parent.mkdir(parents=True, exist_ok=True)
+def export_image(obj: ObjectReader, path: Path, overwrite: bool = True) -> bool:
     try:
         data = obj.read()
         buffer = BytesIO()
@@ -59,33 +60,33 @@ def export_image(obj: ObjectReader, overwrite: bool = True) -> bool:
     return True
 
 
-def export_image_metadata(obj: ObjectReader):
+def export_image_metadata(obj: ObjectReader, path: Path) -> None:
     def dump(d) -> str:
         return json.dumps(d, indent=4, ensure_ascii=False, cls=UnityJsonEncoder)
 
-    json_path = Path(obj.container).with_suffix(".json")
     try:
         data = dump(obj.read_typetree())
     except Exception as e:
-        print(f"Failed to save {json_path}: {e}")
+        print(f"Failed to save {path}: {e}")
         return
-    if json_path.exists():
+    if path.exists():
         try:
-            with open(json_path, "r") as f:
+            with open(path, "r") as f:
                 existing = dump(json.load(f))
             if existing == data:
                 return
         except Exception as e:
             pass
-    with open(json_path, "w", encoding="utf-8") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write(data)
-        print(f"Written to {json_path}")
+        print(f"Written to {path}")
 
 
 
 def export_images():
-    asset_map([unity_asset_dir_1, unity_asset_dir_2], texture2d_export)
-    asset_map([unity_asset_dir_1, unity_asset_dir_2], sprite_export)
+    files = get_unity3d_files()
+    asset_map(files, texture2d_export)
+    asset_map(files, sprite_export)
 
 
 if __name__ == "__main__":

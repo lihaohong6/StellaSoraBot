@@ -1,6 +1,7 @@
 import json
 import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from functools import cache
 from pathlib import Path
 from typing import TypeVar, Callable
 
@@ -8,7 +9,7 @@ import UnityPy
 from UnityPy import Environment
 from UnityPy.files import ObjectReader
 
-from unpack.unpack_paths import vendor_library_dir
+from unpack.unpack_paths import vendor_library_dir, unity_asset_dir_2, unity_asset_dir_1
 
 T = TypeVar("T")
 
@@ -23,14 +24,19 @@ def for_each_object(f: Path, mapper: Callable[[ObjectReader, Environment], T]) -
     return result
 
 
-def asset_map(directories: list[Path], mapper: Callable[[ObjectReader, Environment], T]) -> list[T]:
-    files: list[Path] = []
-    for directory in directories:
-        files.extend(directory.rglob("*.unity3d"))
-    files = [f for f in files if f.is_file()]
+@cache
+def get_unity3d_files() -> list[Path]:
+    files: dict[str, Path] = dict((f.name, f) for f in unity_asset_dir_2.rglob("*.unity3d"))
+    for f in unity_asset_dir_1.rglob("*.unity3d"):
+        if f.name not in files:
+            files[f.name] = f
+    return list(files.values())
+
+
+def asset_map(files: list[Path], mapper: Callable[[ObjectReader, Environment], T], max_workers: int = 20) -> list[T]:
     print(f"Processing {len(files)} files...")
     result: list[T] = []
-    with ProcessPoolExecutor(max_workers=20) as executor:
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
         future_to_file = {executor.submit(for_each_object, f, mapper): f for f in files}
         for future in as_completed(future_to_file):
             for res in future.result():
