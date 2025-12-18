@@ -21,3 +21,7 @@ def export_lua():
     if lua_target_dir.exists():
         shutil.rmtree(lua_target_dir)
     lua_source_dir.rename(lua_target_dir)
+
+
+if __name__ == "__main__":
+    export_lua()

@@ -43,7 +43,7 @@ def process_param(param: str) -> tuple[SkillParamType, list[int] | int | str]:
         except ValueError:
             return str(original_value)
         suffix = "%"
-        if dict_key_hint == "Time":
+        if dict_key_hint in {"Time", "CommonData"} or "Fixed" in hint:
             suffix = ""
         if "Pct" in hint:
             suffix = "%"
@@ -70,7 +70,7 @@ def process_param(param: str) -> tuple[SkillParamType, list[int] | int | str]:
         return param_type, row["Title"]
     if row is not None and "SkillPercentAmend" in row:
         return param_type, normalize_percentage(row["SkillPercentAmend"])
-    if file_name in {"Shield", "Buff", "Effect"}:
+    if file_name in {"Shield", "Buff", "Effect", "OnceAdditionalAttribute", "ScriptParameter"}:
         value_table = load_json(f"{file_name}Value")
         cur_id = int(param_id)
         if str(cur_id) not in value_table:
@@ -81,8 +81,10 @@ def process_param(param: str) -> tuple[SkillParamType, list[int] | int | str]:
         for i in range(0, 10):
             key = str(cur_id + i * 10)
             # Only 1/2 value(s); terminate early
-            if i in {1, 2} and key not in value_table:
-                return param_type, result[0]
+            if key not in value_table:
+                if i in {1, 2}:
+                    return param_type, result[0]
+                return param_type, result
             v = value_table[key][dict_key_hint]
             if dict_key_hint == "EffectTypeFirstSubtype":
                 # Special case: this is an effect that needs to be looked up in a table
@@ -100,9 +102,8 @@ def process_param(param: str) -> tuple[SkillParamType, list[int] | int | str]:
             value = get_effect_by_type(value, row['EffectTypeSecondSubtype']).desc
         return param_type, normalize_percentage(value)
     if file_name == "BuffValue":
-        assert segments[3] == "Time"
-        return param_type, int(row["Time"] / 10000)
-    raise RuntimeError(f"Could not find matching file for param {param}")
+        return param_type, normalize_percentage(row[dict_key_hint])
+    return param_type, normalize_percentage(row[dict_key_hint])
 
 
 def parse_param(param_string: str) -> SkillParam:
@@ -120,8 +121,11 @@ def parse_params(d: dict, max_params: int) -> list[SkillParam]:
     params: list[SkillParam] = []
     for i in range(1, max_params + 1):
         param_key = f"Param{i}"
+        if param_key not in d:
+            continue
+        param_text = d[param_key]
         try:
-            param = parse_param(d[param_key])
+            param = parse_param(param_text)
         except Exception as e:
             print(d['Id'])
             print(e)
@@ -195,7 +199,14 @@ class Skill:
         return t
 
 
-def format_desc(desc: str, params: list[SkillParam], level: int) -> str | None:
+def format_desc(desc: str, params: list[SkillParam], level: int, max_level: int = 9) -> str | None:
+    """
+    :param desc:
+    :param params:
+    :param level: Skill level. -1 to force all params to be joined together.
+    :param max_level:
+    :return:
+    """
     for param_num, skill_param in enumerate(params):
         search_string = "{" + str(param_num + 1) + "}"
         if search_string not in desc:
@@ -206,11 +217,16 @@ def format_desc(desc: str, params: list[SkillParam], level: int) -> str | None:
         if type(param) != list:
             desc = desc.replace(search_string, str(param))
         else:
-            if skill_param.param_type == SkillParamType.SKILL_LEVEL:
+            if level != -1 and skill_param.param_type == SkillParamType.SKILL_LEVEL:
                 desc = desc.replace(search_string, str(param[level]))
             else:
-                # At most 9 levels. Sometimes we get filler data with 0s.
-                string = "/".join(param[:9])
+                # Sometimes we get filler data with 0s.
+                params = param[:max_level]
+                # Sometimes we get dup values
+                if all(params[0] == p for p in params):
+                    string = params[0]
+                else:
+                    string = "/".join(params)
                 string = skill_level_hint(skill_param.param_type, string)
                 desc = desc.replace(search_string, string)
     return desc
