@@ -3,9 +3,10 @@ from pathlib import Path
 
 from character_info.audio import generate_audio_page
 from character_info.char_advance import update_character_advancement_material
-from character_info.char_gifts import gifts_main
+from character_info.char_affinity import gifts_main, affinity_main
 from character_info.char_images import upload_char_images
 from character_info.char_infobox import update_infobox
+from character_info.char_potential import potential_main
 from character_info.char_skills import upload_skill_icons, update_skills
 from character_info.char_sprites import char_gallery_page
 from character_info.char_story import update_character_stories
@@ -21,7 +22,8 @@ def update_character_page():
     upload_skill_icons()
     update_skills()
     update_character_advancement_material()
-    gifts_main()
+    affinity_main()
+    potential_main()
     update_character_stories()
     update_private_messages()
     char_gallery_page()

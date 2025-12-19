@@ -170,7 +170,7 @@ def upload_potential_icons():
     process_uploads(upload_requests)
 
 
-def main():
+def potential_main():
     upload_potential_icons()
     p = get_potentials()
     pages = get_character_pages()
@@ -192,4 +192,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    potential_main()

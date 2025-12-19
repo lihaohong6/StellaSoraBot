@@ -1,12 +1,13 @@
+from collections import defaultdict
 from dataclasses import dataclass
 from functools import cache
 
-from wikitextparser import parse
+from wikitextparser import parse, WikiText, Template
 
 from character_info.characters import get_characters, id_to_char, Character, get_character_pages
 from page_generators.items import make_item_pages, Item, get_all_items
 from utils.data_utils import autoload
-from utils.wiki_utils import find_template_by_name, save_page
+from utils.wiki_utils import find_template_by_name, save_page, find_section, set_arg
 
 
 @cache
@@ -55,26 +56,57 @@ def get_gifts() -> list[Gift]:
     return result
 
 
-def save_character_favourite_gifts():
+def save_character_favourite_gifts(t: Template, char: Character) -> None:
     fav_gifts = get_character_favourite_gift_items()
-    for char, page in get_character_pages().items():
-        gifts = fav_gifts[char]
-        parsed = parse(page.text)
-        t = find_template_by_name(parsed, "TrekkerGifts")
-        assert t is not None
-        t.string = "{{TrekkerGifts|" + "|".join(g.title for g in gifts) + "}}"
-        save_page(page, str(parsed))
+    gifts = fav_gifts[char]
+    t.string = "{{TrekkerGifts|" + "|".join(g.title for g in gifts) + "}}"
 
 
 def gifts_main():
     gifts = get_gifts()
     make_item_pages([g.id for g in gifts], content="is a [[gift]].\n==Trekkers==\n{{GiftTrekkers}}", overwrite=True, category="Gift")
-    save_character_favourite_gifts()
 
 
-def main():
+@dataclass
+class AffinityQuest:
+    desc: str
+    exp: int
+
+
+@cache
+def get_affinity_quests():
+    result: dict[Character, list[AffinityQuest]] = defaultdict(list)
+    for k, v in autoload("AffinityQuest").items():
+        char = id_to_char(v['CharId'])
+        if char is None:
+            continue
+        desc = v['Desc']
+        for i in range(1, 10):
+            if f"{{{i}}}" in desc:
+                desc = desc.replace(f"{{{i}}}", v[f'Param{i}'])
+        result[char].append(AffinityQuest(desc, v['AffinityExp']))
+    return result
+
+
+def save_affinity_quests(t: Template, char: Character) -> None:
+    quests = get_affinity_quests()[char]
+    for i, q in enumerate(quests, 1):
+        set_arg(t, f"text{i}", q.desc)
+        set_arg(t, f"exp{i}", q.exp)
+
+
+def affinity_main():
     gifts_main()
+    for char, page in get_character_pages().items():
+        parsed = parse(page.text)
+        section = find_section(parsed, "Affinity")
+        gifts = Template("{{TrekkerGifts}}")
+        save_character_favourite_gifts(gifts, char)
+        affinity = Template("{{TrekkerAffinityTasks}}")
+        save_affinity_quests(affinity, char)
+        section.contents = "\n".join([str(gifts), str(affinity)]) + "\n"
+        save_page(page, str(parsed), "update affinity section")
 
 
 if __name__ == '__main__':
-    main()
+    affinity_main()
