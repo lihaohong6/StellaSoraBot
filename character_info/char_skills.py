@@ -34,6 +34,7 @@ def get_effect_by_type(type1: int, type2: int) -> Effect:
 def process_param(param: str) -> tuple[SkillParamType, list[int] | int | str]:
     hint: str = ""
     dict_key_hint: str = ""
+    segments = param.split(',')
 
     def normalize_percentage(original_value: float | list[float]) -> str | list[str]:
         if type(original_value) is list:
@@ -42,6 +43,17 @@ def process_param(param: str) -> tuple[SkillParamType, list[int] | int | str]:
             value = float(original_value)
         except ValueError:
             return str(original_value)
+        if hint == "EAT" and segments[-2] == "Enum":
+            enum_dict = {
+                "AttributeType1": "ParameterType1",
+                "AttributeType2": "ParameterType2",
+                "EffectTypeFirstSubtype": "EffectTypeSecondSubtype"
+            }
+            assert dict_key_hint in enum_dict
+            # Special case: this is an effect that needs to be looked up in a table
+            type2 = value_table[key][enum_dict[dict_key_hint]]
+            effect = get_effect_by_type(int(original_value), type2)
+            return effect.desc
         suffix = "%"
         if dict_key_hint in {"Time", "CommonData"} or "Fixed" in hint:
             suffix = ""
@@ -53,13 +65,12 @@ def process_param(param: str) -> tuple[SkillParamType, list[int] | int | str]:
             value *= 100
         return f"{value:.1f}{suffix}"
 
-    segments = param.split(',')
     if len(segments) > 4:
         hint = segments[-1]
     else:
         hint = "10K"
     file_name = segments[0]
-    data = load_json(file_name)
+    data = autoload(file_name)
     if not data:
         raise RuntimeError(f"No data found for {file_name}")
     param_id = segments[2]
@@ -70,8 +81,11 @@ def process_param(param: str) -> tuple[SkillParamType, list[int] | int | str]:
         return param_type, row["Title"]
     if row is not None and "SkillPercentAmend" in row:
         return param_type, normalize_percentage(row["SkillPercentAmend"])
-    if file_name in {"Shield", "Buff", "Effect", "OnceAdditionalAttribute", "ScriptParameter"}:
-        value_table = load_json(f"{file_name}Value")
+    if file_name in {"Shield", "Buff", "Effect", "OnceAdditionalAttribute", "ScriptParameter", "EffectValue", "BuffValue", "OnceAdditionalAttributeValue"}:
+        if "Value" in file_name:
+            value_table = data
+        else:
+            value_table = load_json(f"{file_name}Value")
         cur_id = int(param_id)
         if str(cur_id) not in value_table:
             cur_id += 10
@@ -86,23 +100,9 @@ def process_param(param: str) -> tuple[SkillParamType, list[int] | int | str]:
                     return param_type, result[0]
                 return param_type, result
             v = value_table[key][dict_key_hint]
-            if dict_key_hint == "EffectTypeFirstSubtype":
-                # Special case: this is an effect that needs to be looked up in a table
-                type2 = value_table[key]["EffectTypeSecondSubtype"]
-                effect = get_effect_by_type(v, type2)
-                result.append(effect.desc)
-            else:
-                v = normalize_percentage(v)
-                result.append(v)
+            v = normalize_percentage(v)
+            result.append(v)
         return param_type, result
-    if file_name == "EffectValue":
-        assert segments[1] == "NoLevel"
-        value = row[dict_key_hint]
-        if dict_key_hint == "EffectTypeFirstSubtype":
-            value = get_effect_by_type(value, row['EffectTypeSecondSubtype']).desc
-        return param_type, normalize_percentage(value)
-    if file_name == "BuffValue":
-        return param_type, normalize_percentage(row[dict_key_hint])
     return param_type, normalize_percentage(row[dict_key_hint])
 
 
@@ -122,6 +122,7 @@ def parse_params(d: dict, max_params: int) -> list[SkillParam]:
     for i in range(1, max_params + 1):
         param_key = f"Param{i}"
         if param_key not in d:
+            params.append(SkillParam(SkillParamType.NONE, -1))
             continue
         param_text = d[param_key]
         try:
@@ -177,7 +178,6 @@ class Skill:
         for level in range(10):
             desc = format_desc(self.desc, self.params, level)
             if desc is None:
-                print(f"Failed to format {self.name} for level {level}")
                 continue
             result.append(desc)
         return result
@@ -213,6 +213,7 @@ def format_desc(desc: str, params: list[SkillParam], level: int, max_level: int 
             continue
         param = skill_param.params
         if param == -1:
+            print(f"ERROR: could not format param {param_num + 1} of {desc} at level {level}")
             return None
         if type(param) != list:
             desc = desc.replace(search_string, str(param))
