@@ -308,7 +308,7 @@ def upload_sprites():
                 json_data[char_name][variant_name].append(sprite.combined.stem.split("_")[-1])
         page_creation_requests.append(PageCreationRequest(
             page=f"Category:{char_name} sprites",
-            text="[[Category:Sprites by character]]",
+            text="{{Catnav|Sprites by character}}\n[[Category:Sprites by character]]",
             summary="create sprite categories"
         ))
     process_uploads(upload_requests)
