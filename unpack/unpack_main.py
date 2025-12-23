@@ -8,7 +8,8 @@ assert data_dir.exists() and unity_asset_dir_1.exists() and text_dir.exists()
 
 
 def export_all_assets():
-    generate_dummy_dll()
+    # Failing due to missing decryption key change in fkStellaSora?
+    # generate_dummy_dll()
     export_images()
     export_audio()
     export_lua()

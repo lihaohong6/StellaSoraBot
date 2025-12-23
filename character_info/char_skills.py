@@ -8,9 +8,9 @@ from wikitextparser import parse, Template
 
 from character_info.characters import get_id_to_char, get_character_pages, ElementType, common_name_to_element_type
 from utils.data_utils import autoload, load_json, assets_root
-from utils.skill_utils import skill_escape, get_effects, Effect
+from utils.skill_utils import skill_escape, get_effects, Effect, get_words
 from utils.upload_utils import UploadRequest, process_uploads
-from utils.wiki_utils import force_section_text, set_arg, save_page
+from utils.wiki_utils import force_section_text, set_arg, save_page, save_json_page
 
 
 class SkillParamType(Enum):
@@ -325,10 +325,19 @@ def upload_skill_icons():
     process_uploads(upload_requests)
 
 
-def main():
+def update_words():
+    words = get_words()
+    obj = {}
+    for word in words.values():
+        obj[word.name] = word.desc
+    save_json_page("Module:Words/data.json", obj)
+
+
+def skill_main():
     upload_skill_icons()
     update_skills()
+    update_words()
 
 
 if __name__ == "__main__":
-    main()
+    skill_main()

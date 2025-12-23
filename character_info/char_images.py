@@ -20,6 +20,10 @@ def upload_char_images():
         path = head_root / f"head_{char.id}01_s.png"
         page = f"{char.name}-head-s.png"
         req.append(UploadRequest(path, page, ""))
+
+        path = assets_root / "actor2d/character" / f"{char.id}01/{char.id}01_cg.png"
+        page = f"{char.name}_Memory_Snapshot.png"
+        req.append(UploadRequest(path, page, ""))
     process_uploads(req)
 
 

@@ -11,7 +11,7 @@ from character_info.characters import id_to_char, Character, get_character_pages
 from utils.data_utils import assets_root, sprite_root, load_lua_table, lua_root
 from utils.upload_utils import UploadRequest, process_uploads
 from utils.wiki_utils import save_json_page, set_arg, save_page, PageCreationRequest, process_page_creation_requests, \
-    find_templates_by_name
+    find_templates_by_name, find_section
 
 
 @dataclass
@@ -122,10 +122,10 @@ variant_whitelist: dict[str, set[str]] = {
     "Eleanor": {"b"},
     "Fannie": {"a"},
     "Feagin": {"a"},
-    "Female tyrant": {"a", "b", "c", "f", "g", "h", "i", },
+    "Female tyrant": {"a", "b", "c", "f", "g", "h", "i", "l"},
     "Firenze": {"c", "d"},
     "Flora": {"b"},
-    "Freesia": {"a", "b"},
+    "Freesia": {"a", "b", "c", "d"},
     "Fuyuka": {"a"},
     "Gerie": {"a", },
     "Horizon": {"a"},
@@ -137,7 +137,7 @@ variant_whitelist: dict[str, set[str]] = {
     "Kaydoke": {"a"},
     "Kasimira": {"a"},
     "Lady Gray": {"a"},
-    "Laru": {"a"},
+    "Laru": {"a", "b"},
     "Leafia": {"a"},
     "Male tyrant": {"a", "b", "c", "f", "g", "h", "i", },
     "Marlene": {"a", "b"},
@@ -157,6 +157,7 @@ variant_whitelist: dict[str, set[str]] = {
     "Serena": {"a"},
     "Shia": {"a", "b"},
     "Shimiao": {"a"},
+    "Snowish Laru": {"a", "b"},
     "Teresa": {"a"},
     "Tilia": {"a", "b", "c", "d", "e", },
     "Virigia": {"a"},
@@ -338,6 +339,8 @@ def sprites_to_template(char: str, sprites: dict[str, list[Sprite]], skip: set[s
 def create_gallery_pages():
     all_sprites = get_char_sprites()
     for char, page in get_character_pages("/gallery", must_exist=False).items():
+        if char.name not in all_sprites:
+            continue
         char_sprites = all_sprites[char.name]
         parsed = parse(page.text)
         sprite_templates = find_templates_by_name(parsed, "Sprite")
@@ -354,9 +357,12 @@ def create_gallery_pages():
 """, "batch update gallery page")
         elif len(char_sprites) - len(skip) > 0:
             # There are new sprites. Do an incremental update.
-            assert len(sprite_templates) > 0
-            sprite_templates[-1].string = sprite_templates[-1].string.rstrip() + "\n\n" + str(templates)
+            if len(sprite_templates) > 0:
+                sprite_templates[-1].string = sprite_templates[-1].string.rstrip() + "\n\n" + str(templates)
+            else:
+                find_section(parsed, "Sprites").contents = str(templates)
             save_page(page, str(parsed), "batch update gallery page")
+
 
 
 def char_gallery_page():

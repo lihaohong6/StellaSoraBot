@@ -183,7 +183,8 @@ def upload_audio_files(char_name: str, audio_lines: list[AudioLine]) -> None:
             if not source.exists():
                 continue
             ogg_file = ogg_dir / f"{filename}.ogg"
-            wav_to_ogg(source, ogg_file)
+            if not ogg_file.exists():
+                wav_to_ogg(source, ogg_file)
             target_page = audio_line.file_page(lang)
             upload_requests.append(UploadRequest(
                 source=ogg_file,

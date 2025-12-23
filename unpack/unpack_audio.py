@@ -47,3 +47,11 @@ def export_disc_txtp():
                    check=True, cwd=disc_bgm_wem_dir)
     subprocess.run(["fd", "-e", "txtp", "-x", "sed", "-i", "-E", r's|wem/([0-9]+)\.wem|../\1.media.wem|g'],
                    check=True, cwd=disc_bgm_wem_dir)
+
+
+def main():
+    export_audio()
+
+
+if __name__ == "__main__":
+    main()

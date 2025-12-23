@@ -39,6 +39,7 @@ def update_infobox():
         if not target:
             continue
         pairs = [
+            ("id", str(char.id)),
             ("birthday", char.birthday),
             ("affiliation", char.affiliation),
             ("skills", char.skills),
@@ -51,6 +52,15 @@ def update_infobox():
         for arg, value in pairs:
             for link in auto_link:
                 value = value.replace(link, f"[[{link}]]")
+            set_arg(target, arg, value)
+        # Update only. Do not overwrite.
+        pairs = [
+            ("image_profile", f"{char.name}.png"),
+            ("image_artwork", f"{char.name}_a_02.png")
+        ]
+        for arg, value in pairs:
+            if target.has_arg(arg) and target.get_arg(arg).value.strip() != "":
+                continue
             set_arg(target, arg, value)
         tags = get_character_tags(char.id)
         set_arg(target, "role", tags[0].name)
