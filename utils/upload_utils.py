@@ -35,6 +35,8 @@ def upload_file(text: str, target: FilePage, summary: str = "batch upload file",
                 # continue
                 print(f"INFO: {target.title(with_ns=True)} was deleted. Will not reupload.")
                 return
+            if "fileexists-no-change" in str(e):
+                return
             assert search is not None, str(e)
             existing_page = f"File:{search.group(1)}"
             if ignore_dup:
@@ -68,9 +70,16 @@ def process_uploads(requests: list[UploadRequest],
                 r.target = "File:" + r.target
             r.target = FilePage(s, r.target)
     existing = set(p.title() for p in PreloadingGenerator((r.target for r in requests)) if p.exists())
+    overwrite_all = False
     for r in requests:
         if r.target.title() in existing:
-            if overwrite and input(f"Overwrite: {r.target.title()}?") == "y":
+            if overwrite:
+                if not overwrite_all:
+                    user_choice = input(f"Overwrite: {r.target.title()}?")
+                    if user_choice == "a":
+                        overwrite_all = True
+                    elif user_choice != "y":
+                        continue
                 force = True
             else:
                 continue

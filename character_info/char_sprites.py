@@ -34,48 +34,35 @@ class Sprite:
         return base / f"{char_name}_{sprite_name}_{self.number:02d}.png"
 
 
-def compute_offsets(base: SpriteData, top: SpriteData) -> tuple[int, int]:
-    """
-    Compute the sprite layout offset. Idea and code came from Hiro (Hiro420).
-    :param base:
-    :param top:
-    :return:
-    """
-    center_x1 = base.x + base.width / 2.0
-    center_y1 = base.y + base.height / 2.0
-    center_x2 = top.x + top.width / 2.0
-    center_y2 = top.y + top.height / 2.0
-
-    dx = center_x2 - center_x1
-    dy = center_y2 - center_y1
-
-    # Base/top image sizes (should match bw/bh and tw/th closely)
-    base_w, base_h = int(round(base.width)), int(round(base.height))
-    top_w, top_h = int(round(top.width)), int(round(top.height))
-
-    base_center_x = base_w / 2.0
-    base_center_y = base_h / 2.0
-    top_pivot_x = top_w / 2.0
-    top_pivot_y = top_h / 2.0
-
-    # Final offsets, matching the derived formulas
-    offset_x = int(round(base_center_x + dx - top_pivot_x))
-    offset_y = int(round(base_center_y - dy - top_pivot_y))
-
-    return offset_x, offset_y
-
+def compute_offsets(base: SpriteData, top: SpriteData, bh: float, th: float) -> tuple[int, int]:
+    off_x = top.x - base.x
+    off_y = (bh - th) + (base.y - top.y)
+    return int(round(off_x)), int(round(off_y))
 
 def compose(base: Sprite, top: Sprite, out: Path) -> None:
     base_image = Image.open(base.source).convert("RGBA")
     top_image = Image.open(top.source).convert("RGBA")
 
+    canvas_size = (4096, 4096)
+    canvas_color = (0, 0, 0, 0)
+
+    anchor_x, anchor_y = 1024, 1024
+    canvas1 = Image.new("RGBA", canvas_size, canvas_color)
+    canvas1.paste(base_image, (anchor_x, anchor_y))
+
     if base_image.size == top_image.size:
-        offset_x, offset_y = 0, 0
+        off_x, off_y = 0, 0
     else:
-        offset_x, offset_y = compute_offsets(base.json_data, top.json_data)
-    overlay_layer = Image.new("RGBA", base_image.size, (0, 0, 0, 0))
-    overlay_layer.paste(top_image, (offset_x, offset_y))
-    combined = Image.alpha_composite(base_image, overlay_layer)
+        base_height = base_image.size[1]
+        top_height = top_image.size[1]
+        off_x, off_y = compute_offsets(base.json_data, top.json_data, base_height, top_height)
+    canvas2 = Image.new("RGBA", canvas_size, canvas_color)
+    canvas2.paste(top_image, (anchor_x + off_x, anchor_y + off_y))
+
+    combined = Image.alpha_composite(canvas1, canvas2)
+    bbox = combined.getbbox()
+    if bbox:
+        combined = combined.crop(bbox)
     combined.save(out)
     print(f"Saved {out}")
 
