@@ -50,8 +50,7 @@ class MessageState:
 
 @cache
 def get_character_sex_strings() -> dict[str, list[str]]:
-    file = lua_root / "game/ui/avg/_en/preset/avguitext.lua"
-    data = load_lua_table(file)
+    data = load_lua_table("game/ui/avg/_en/preset/avguitext.lua")
     return data["SEX"]
 
 
@@ -172,14 +171,14 @@ def conversation_to_template(conversation: MessengerConversation) -> str:
 
 
 def get_private_messages() -> dict[str, CharacterMessages]:
-    pm_root = lua_root / "game/ui/avg/_en/config"
+    pm_root = "game/ui/avg/_en/config/"
     result: dict[str, CharacterMessages] = {}
     for char_name, char in get_characters().items():
-        pm_path = pm_root / f"pm{char.id}01.lua"
-        if not pm_path.exists():
+        pm_path = pm_root + f"pm{char.id}01.lua"
+        data = load_lua_table(pm_path)
+        if data is None:
             print(f"ERROR: {char_name}'s PM file {pm_path} does not exist")
             continue
-        data = load_lua_table(pm_path)
         messages = parse_private_messages(char, data)
         result[char_name] = messages
     return result

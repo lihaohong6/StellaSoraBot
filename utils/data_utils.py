@@ -3,6 +3,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any, Callable
 
+import xxhash
 from slpp import slpp
 
 from unpack.unpack_paths import vendor_library_dir
@@ -49,8 +50,15 @@ def load_json_pair(name: str) -> tuple[dict, dict]:
 
 
 @cache
-def load_lua_table(file: Path) -> dict | list:
-    with open(file, "r", encoding='utf-8') as f:
+def load_lua_table(file_name: str) -> dict | list | None:
+    path = lua_root / file_name
+    if not path.exists():
+        guess = lua_root / (xxhash.xxh64(file_name).hexdigest().upper() + ".lua")
+        if guess.exists():
+            guess.rename(path)
+        else:
+            return None
+    with open(path, "r", encoding='utf-8') as f:
         content = f.read()
     content = content.lstrip("return")
     data = slpp.decode(content)

@@ -10,4 +10,5 @@ dependencies = [
     "slpp>=1.2.3",
     "unitypy[ttgen]==1.23.0",
     "wikitextparser>=0.56.4",
+    "xxhash>=3.6.0",
 ]

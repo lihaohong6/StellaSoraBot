@@ -176,8 +176,7 @@ class AvgCharacter:
 
 @cache
 def get_avg_characters() -> tuple[dict[str, AvgCharacter], dict[str, str]]:
-    file = lua_root / "game/ui/avg/_en/preset/avgcharacter.lua"
-    data: list[dict] = load_lua_table(file)
+    data: list[dict] = load_lua_table("game/ui/avg/_en/preset/avgcharacter.lua")
     result: dict[str, AvgCharacter] = {}
     reuse_table: dict[str, str] = {}
     for row in data:
