@@ -32,9 +32,6 @@ def get_character_favourite_gift_items() -> dict[Character, list[Item]]:
             if gift.tags[0] not in tags:
                 continue
             item = get_all_items()[gift.id]
-            # Highest rarity gifts don't exist yet
-            if item.rarity < 2:
-                continue
             result[char].append(item)
     return result
 
