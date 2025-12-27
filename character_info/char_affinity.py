@@ -2,13 +2,13 @@ from collections import defaultdict
 from dataclasses import dataclass
 from functools import cache
 
-from wikitextparser import parse, WikiText, Template
+from wikitextparser import parse, Template
 
-from character_info.char_skills import get_effect_by_type
-from character_info.characters import get_characters, id_to_char, Character, get_character_pages
+from character_info.characters import id_to_char, Character, get_character_pages
 from page_generators.items import make_item_pages, Item, get_all_items
+from utils.stat_utils import StatBonus, get_stat_bonus
 from utils.data_utils import autoload
-from utils.wiki_utils import find_template_by_name, save_page, find_section, set_arg
+from utils.wiki_utils import save_page, find_section, set_arg
 
 
 @cache
@@ -94,13 +94,6 @@ def save_affinity_quests(t: Template, char: Character) -> None:
 
 
 @dataclass
-class StatBonus:
-    hp: int
-    attack: int
-    attack_pct: float
-
-
-@dataclass
 class AffinityLevel:
     level: int
     exp: int
@@ -108,33 +101,12 @@ class AffinityLevel:
     stat_bonuses: StatBonus
 
 
-def parse_effect(effect_id: int) -> tuple[str, int | float]:
-    data = autoload("EffectValue")
-    v = data[str(effect_id)]
-    effect = get_effect_by_type(v['EffectTypeFirstSubtype'], v['EffectTypeSecondSubtype'])
-    return effect.desc, v['EffectTypeParam1']
-
-
 def get_affinity_levels() -> dict[int, list[AffinityLevel]]:
     data = autoload("AffinityLevel")
     result: dict[int, list[AffinityLevel]] = defaultdict(list)
     for _, v in data.items():
         rarity = v['TemplateId']
-        base_hp = 0
-        base_attack = 0
-        pct_attack = 0
-        for effect_id in v.get('Effect', []):
-            desc, val = parse_effect(effect_id)
-            match desc:
-                case "Base HP":
-                    base_hp = val
-                case "Base ATK":
-                    base_attack = val
-                case "ATK":
-                    pct_attack = val
-                case _:
-                    raise RuntimeError(f"Unknown effect type {effect_id}")
-        stat_bonus = StatBonus(base_hp, base_attack, pct_attack)
+        stat_bonus = get_stat_bonus(v.get('Effect', []))
         result[rarity].append(AffinityLevel(v.get('AffinityLevel', 1), v.get('NeedExp', 0), v['AffinityLevelName'], stat_bonus))
     return result
 

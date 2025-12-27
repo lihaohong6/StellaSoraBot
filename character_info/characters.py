@@ -5,6 +5,7 @@ from functools import cache
 from pywikibot import Page
 from pywikibot.pagegenerators import PreloadingGenerator
 
+from page_generators.items import get_all_items
 from utils.data_utils import autoload, load_json
 from utils.wiki_utils import s
 
@@ -44,6 +45,14 @@ def get_char_element_type(char_id: int) -> ElementType:
     return ElementType(element_type[0])
 
 
+class CharacterRarity(Enum):
+    NORMAL = 2
+    RARE = 1
+
+    def stars(self) -> int:
+        return 6 - self.value
+
+
 @dataclass
 class Character:
     id: int
@@ -56,6 +65,7 @@ class Character:
     address: str = None
     affiliation: str = None
     element: ElementType = None
+    rarity: CharacterRarity = None
 
     def __hash__(self) -> int:
         return hash(self.id)
@@ -65,12 +75,14 @@ class Character:
 def get_characters() -> dict[str, Character]:
     data = autoload("Character")
     base_info = autoload("CharacterArchiveBaseInfo")
+    items = get_all_items()
     result = {}
     for k, v in data.items():
         name = v["Name"]
         if name == "???":
             continue
         c = Character(v["Id"], name)
+        c.rarity = CharacterRarity(items[v['Id']].rarity)
         pairs = [
             ("birthday", "02"),
             ("affiliation", "03"),
