@@ -1,16 +1,15 @@
 from collections import defaultdict
 from dataclasses import dataclass
 
-from wikitextparser import Template
+from wikitextparser import Template, parse
 
-from character_info.char_advance import AdvanceMaterial, get_char_advance_material
-from character_info.char_affinity import AffinityLevel, get_affinity_levels
-from character_info.char_talents import get_talent_levels, TalentLevel
-from character_info.characters import Character, id_to_char, get_characters, get_character_pages
-from page_generators.items import make_item_template, get_all_items
+from character_info.char_advance import AdvanceMaterial, get_char_advance_material, upgrade_material_to_string
+from character_info.char_affinity import get_affinity_levels
+from character_info.char_talents import get_talent_levels
+from character_info.characters import Character, id_to_char, get_character_pages, CharacterRarity
 from utils.data_utils import autoload
 from utils.stat_utils import StatBonus
-from utils.wiki_utils import set_arg
+from utils.wiki_utils import set_arg, force_section_text, save_page
 
 
 @dataclass
@@ -110,15 +109,13 @@ def char_stats_to_template(stats: list[LevelStats],
     t = Template("{{StatDisplay/children\n}}")
     set_arg(t, "name", "level")
     set_arg(t, "children", ",".join(str(stat.breakthrough + 1) for stat in stats))
-    items = get_all_items()
     for index, material in enumerate(advancement_materials, 1):
-        if len(material.items) == 0:
-            break
-        item_list = []
-        for item_id, quantity in material.items:
-            item_list.append(str(make_item_template(items[item_id], quantity)))
-        item_list.append(str(make_item_template(items[1], material.gold)))
-        set_arg(t, str(index), f"<div>Breakthrough material at level {index * 10}: " + "".join(item_list) + "</div>")
+        upgrade_items = upgrade_material_to_string(material)
+        if upgrade_items == "":
+            text = "<div></div>"
+        else:
+            text = f"<div>Breakthrough material at level {index * 10}: {upgrade_items}</div>"
+        set_arg(t, str(index), text)
     result.append(str(t))
 
     t = Template("{{StatDisplay\n}}")
@@ -126,16 +123,18 @@ def char_stats_to_template(stats: list[LevelStats],
     return str(t)
 
 
-def main():
+def update_character_stats():
     for char, page in get_character_pages().items():
         stats = get_char_stats()[char]
         adv_materials = get_char_advance_material()[char.id]
-        affinity_levels = [l.stat_bonuses for l in get_affinity_levels()[char.rarity.value]]
+        # This doesn't change depending on char rarity but is the same for everyone
+        affinity_levels = [l.stat_bonuses for l in get_affinity_levels()[CharacterRarity.NORMAL.value]]
         talent_levels = [t.stat_bonuses for t in get_talent_levels()[char]]
         t = char_stats_to_template(stats, adv_materials, affinity_levels, talent_levels)
-        if char.name == 'Amber':
-            print(t)
+        parsed = parse(page.text)
+        force_section_text(parsed, "Stats", t, prepend="Skills")
+        save_page(page, str(parsed), summary="update stats section")
 
 
 if __name__ == '__main__':
-    main()
+    update_character_stats()

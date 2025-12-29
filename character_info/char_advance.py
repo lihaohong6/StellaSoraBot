@@ -6,7 +6,7 @@ from wikitextparser import Template, parse
 from character_info.characters import get_character_pages, Character
 from page_generators.items import get_all_items, make_item_template
 from utils.data_utils import autoload
-from utils.wiki_utils import set_arg, force_section_text, save_page
+from utils.wiki_utils import set_arg, force_section_text, save_page, find_section
 
 
 @dataclass
@@ -57,35 +57,26 @@ def make_character_advancement_template(char: Character) -> Template:
     return material_list_to_template(t, material_list)
 
 
-def material_list_to_template(t: Template, material_list: list[AdvanceMaterial]) -> Template:
+def upgrade_material_to_string(material: AdvanceMaterial) -> str:
+    if len(material.items) == 0:
+        return ""
     items = get_all_items()
+    item_list = []
+    for item_id, quantity in material.items:
+        item_list.append(str(make_item_template(items[item_id], quantity)))
+    item_list.append(str(make_item_template(items[1], material.gold)))
+    return " ".join(item_list)
+
+
+def material_list_to_template(t: Template, material_list: list[AdvanceMaterial]) -> Template:
     for index, material in enumerate(material_list, 1):
-        if len(material.items) == 0:
-            break
-        item_list = []
-        for item_id, quantity in material.items:
-            item_list.append(str(make_item_template(items[item_id], quantity)))
-        item_list.append(str(make_item_template(items[1], material.gold)))
-        set_arg(t, f"level{index}", " ".join(item_list))
+        material_string = upgrade_material_to_string(material)
+        set_arg(t, f"level{index}", material_string)
     return t
 
 
-def update_character_advancement_material():
-    tier_up_section_name = "Tier up"
-    skill_up_section_name = "Skill upgrade"
-    for char, page in get_character_pages().items():
-        parsed = parse(page.text)
-        force_section_text(parsed,
-                           "Upgrade materials",
-                           f"==={tier_up_section_name}===\n\n==={skill_up_section_name}===",
-                           "Gallery")
-        force_section_text(parsed, tier_up_section_name, str(make_character_advancement_template(char)))
-        force_section_text(parsed, skill_up_section_name, str(make_character_skill_advancement_template(char)))
-        save_page(page, str(parsed), "update character upgrade material")
-
-
 def main():
-    update_character_advancement_material()
+    pass
 
 
 if __name__ == '__main__':

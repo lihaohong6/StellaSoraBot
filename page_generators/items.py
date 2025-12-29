@@ -39,7 +39,7 @@ def make_item_page_template(item: Item, category: str | None) -> Template:
     return t
 
 
-def make_item_template(item: Item, quantity: int) -> Template:
+def make_item_template(item: Item, quantity: int = 1) -> Template:
     t = Template("{{Item}}")
     t.set_arg("1", item.title, positional=True)
     if quantity != 1:

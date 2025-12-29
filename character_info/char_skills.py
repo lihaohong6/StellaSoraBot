@@ -6,7 +6,9 @@ from pathlib import Path
 
 from wikitextparser import parse, Template
 
+from character_info.char_advance import get_char_skill_material, material_list_to_template, upgrade_material_to_string
 from character_info.characters import get_id_to_char, get_character_pages, ElementType, common_name_to_element_type
+from page_generators.items import make_item_template, get_all_items
 from utils.data_utils import autoload, load_json, assets_root
 from utils.skill_utils import skill_escape, get_effects, Effect, get_words
 from utils.upload_utils import UploadRequest, process_uploads
@@ -182,11 +184,11 @@ class Skill:
             result.append(desc)
         return result
 
-    def to_template(self) -> Template:
+    def to_template(self, upgrade_materials_brief: str, upgrade_materials: list[str]) -> Template:
         t = Template("{{TrekkerSkill\n}}")
 
         set_arg(t, "name", self.name)
-        set_arg(t, "brief", format_desc(self.brief_desc, self.params, 1))
+        set_arg(t, "brief", format_desc(self.brief_desc, self.params, 1) + "<br>Upgrade materials: " + upgrade_materials_brief)
         if self.cd != 0:
             set_arg(t, "cooldown", self.cd)
         if self.energy != 0:
@@ -194,8 +196,10 @@ class Skill:
         long_desc = self.format_params()
         if long_desc:
             for index, desc in enumerate(long_desc, 1):
-                set_arg(t, f"desc_{index}", desc)
-
+                append = ""
+                if index - 1 < len(upgrade_materials):
+                    append = "<br>Upgrade materials: " + upgrade_materials[index - 1]
+                set_arg(t, f"desc_{index}", desc + append)
         return t
 
 
@@ -288,11 +292,15 @@ def update_skills():
         if skills is None:
             continue
         result = []
+        skill_materials = get_char_skill_material()[char.id]
+        material_ids = list(sorted(set(item[0] for m in skill_materials for item in m.items)))
+        upgrade_items = [upgrade_material_to_string(m) for m in skill_materials]
         for skill, skill_type in [(skills.attack, "auto"),
                      (skills.main, "main"),
                      (skills.support, "support"),
                      (skills.ultimate, "ultimate")]:
-            t = skill.to_template()
+            brief_upgrade = " ".join(str(make_item_template(get_all_items()[material_id])) for material_id in material_ids)
+            t = skill.to_template(brief_upgrade, upgrade_items)
             set_arg(t, "type", skill_type)
             icon_template = Template("{{TrekkerSkillIcon}}")
             icon_template.set_arg("element", skills.element.name)
