@@ -1,3 +1,4 @@
+from collections import defaultdict
 from dataclasses import field, dataclass
 from functools import cache
 
@@ -11,8 +12,16 @@ from utils.wiki_utils import set_arg, force_section_text, save_page, find_sectio
 
 @dataclass
 class AdvanceMaterial:
-    gold: int
+    gold: int = 0
     items: list[tuple[int, int]] = field(default_factory=list)
+
+    def __add__(self, other):
+        if isinstance(other, AdvanceMaterial):
+            items: dict[int, int] = defaultdict(int)
+            for item_id, quantity in self.items + other.items:
+                items[item_id] += quantity
+            return AdvanceMaterial(self.gold + other.gold, [(k, v) for k, v in items.items()])
+        raise NotImplementedError()
 
 
 @cache

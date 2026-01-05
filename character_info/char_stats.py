@@ -109,12 +109,18 @@ def char_stats_to_template(stats: list[LevelStats],
     t = Template("{{StatDisplay/children\n}}")
     set_arg(t, "name", "level")
     set_arg(t, "children", ",".join(str(stat.breakthrough + 1) for stat in stats))
+    cumulative_material = AdvanceMaterial()
     for index, material in enumerate(advancement_materials, 1):
+        upgrade_text = []
         upgrade_items = upgrade_material_to_string(material)
-        if upgrade_items == "":
-            text = "<div></div>"
-        else:
-            text = f"<div>Breakthrough material at level {index * 10}: {upgrade_items}</div>"
+        if upgrade_items != "":
+            upgrade_text.append(f"Breakthrough material at level {index * 10}: {upgrade_items}")
+        show_cumulative = len(cumulative_material.items) > 0
+        if upgrade_items != "":
+            cumulative_material += material
+        if show_cumulative:
+            upgrade_text.append("Cumulative material: " + upgrade_material_to_string(cumulative_material))
+        text = "<br/>".join(upgrade_text)
         set_arg(t, str(index), text)
     result.append(str(t))
 
