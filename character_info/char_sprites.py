@@ -39,6 +39,7 @@ def compute_offsets(base: SpriteData, top: SpriteData, bh: float, th: float) -> 
     off_y = (bh - th) + (base.y - top.y)
     return int(round(off_x)), int(round(off_y))
 
+
 def compose(base: Sprite, top: Sprite, out: Path) -> None:
     base_image = Image.open(base.source).convert("RGBA")
     top_image = Image.open(top.source).convert("RGBA")
@@ -91,7 +92,7 @@ def retrieve_sprite_json_data(f: Path) -> SpriteData | None:
 variant_whitelist: dict[str, set[str]] = {
     "Aeloria": {"a", "b"},
     "Albedo": {"a"},
-    "Amber": {"a", "b", "c", "f", "g", },
+    "Amber": {"a", "b", "c", "d", "e", "f", "g", },
     "Ann": {"a"},
     "Bastelina": {"a"},
     "Beatrixa": {"a"},
@@ -109,15 +110,15 @@ variant_whitelist: dict[str, set[str]] = {
     "Eleanor": {"b"},
     "Fannie": {"a"},
     "Feagin": {"a"},
-    "Female tyrant": {"a", "b", "c", "f", "g", "h", "i", "l"},
+    "Female tyrant": {"a", "b", "c", "d", "e", "f", "g", "h", "i", "l"},
     "Firefly": {"a", "b"},
     "Firenze": {"c", "d"},
     "Flora": {"b"},
     "Freesia": {"a", "b", "c", "d"},
-    "Fuyuka": {"a"},
+    "Fuyuka": {"a", "b", },
     "Gerie": {"a", },
     "Horizon": {"a"},
-    "Iris": {"a", "b", "d", "e"},
+    "Iris": {"a", "b", "c", "d", "e"},
     "Isaki": {"a"},
     "Jinglin": {"a"},
     "Kaede": {"a"},
@@ -127,20 +128,23 @@ variant_whitelist: dict[str, set[str]] = {
     "Lady Gray": {"a"},
     "Laru": {"a", "b"},
     "Leafia": {"a"},
-    "Male tyrant": {"a", "b", "c", "f", "g", "h", "i", "l"},
+    "Male tyrant": {"a", "b", "c", "d", "e", "f", "g", "h", "i", "l"},
     "Marlene": {"a", "b"},
+    "Mina": {"a"},
     "Minova": {"a", "b"},
-    "Mistique": {"a", "c"},
+    "Mistique": {"a", "b", "c", "e", },
     "Nanoha": {"a", "b"},
     "Nazuka": {"a", "c"},
     "Nazuna": {"a", "b"},
     "Neuvira": {"a", },
-    "Noya": {"a", "b", "d", "e", },
+    "Noya": {"a", "b", "c", "d", "e", },
     "Nuz": {"a"},
+    "Nyx": {"a", "b"},
     "Okra": {"a"},
     "Ophir": {"a"},
     "Portia": {"a"},
     "Ridge": {"a"},
+    "Ruby": {"a"},
     "Sapphire": {"a"},
     "Serena": {"a"},
     "Shia": {"a", "b"},
@@ -294,8 +298,14 @@ def upload_sprites():
                 ))
                 json_data[char_name][variant_name].append(sprite.combined.stem.split("_")[-1])
         page_creation_requests.append(PageCreationRequest(
+            page=f"Category:{char_name} images",
+            text="{{Catnav|Images by character}}\n[[Category:Images by character]]",
+            summary="create character image categories"
+        ))
+        page_creation_requests.append(PageCreationRequest(
             page=f"Category:{char_name} sprites",
-            text="{{Catnav|Sprites by character}}\n[[Category:Sprites by character]]",
+            text="{{Catnav|Sprites by character}}\n[[Category:Sprites by character]]\n"
+                 f"[[Category:{char_name} images]]",
             summary="create sprite categories"
         ))
     process_uploads(upload_requests)
@@ -349,7 +359,6 @@ def create_gallery_pages():
             else:
                 find_section(parsed, "Sprites").contents = str(templates)
             save_page(page, str(parsed), "batch update gallery page")
-
 
 
 def char_gallery_page():
