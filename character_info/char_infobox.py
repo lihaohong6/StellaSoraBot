@@ -4,7 +4,7 @@ from functools import cache
 from wikitextparser import parse
 
 from character_info.characters import get_character_pages
-from utils.data_utils import autoload
+from utils.data_utils import autoload, data_root, load_json_from_path
 from utils.wiki_utils import find_template_by_name, save_page, set_arg
 
 
@@ -29,6 +29,15 @@ def get_character_tags(char_id: int) -> list[CharacterTag]:
     tag_dict = get_character_tag_dict()
     return [tag_dict[tag_id]
             for tag_id in data[str(char_id)]['Tag']]
+
+
+def get_localized_names(char_id: int) -> dict[str, str]:
+    result: dict[str, str] = dict()
+    for lang_dir1, lang_dir2, lang_key in [('CN', 'zh_CN', 'cn'), ('JP', 'ja_JP', 'jp'), ('KR', 'ko_KR', 'kr')]:
+        path = data_root / lang_dir1 / "language" / lang_dir2 / "Character.json"
+        data = load_json_from_path(path)
+        result[lang_key] = data[f"Character.{char_id}.1"]
+    return result
 
 
 def update_infobox():
@@ -58,6 +67,8 @@ def update_infobox():
             ("image_profile", f"{char.name}.png"),
             ("image_artwork", f"{char.name}_a_02.png")
         ]
+        for k, v in get_localized_names(char.id).items():
+            pairs.append((f'{k}_name', v))
         for arg, value in pairs:
             if target.has_arg(arg) and target.get_arg(arg).value.strip() != "":
                 continue
