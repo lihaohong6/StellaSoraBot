@@ -6,6 +6,7 @@ from typing import Any
 from pywikibot import FilePage
 from wikitextparser import parse
 
+from character_info.char_sprites import get_avg_characters
 from character_info.char_story import get_story_pages
 from character_info.characters import get_characters, Character, id_to_char
 from utils.data_utils import lua_root, assets_root, load_lua_table
@@ -90,6 +91,11 @@ def parse_private_messages(char: Character, data: list[dict[str, Any]]) -> Chara
             # 5: Info?
             assert msg_type in {0, 1, 3, 4, 5}
             char_string: str
+
+            # Sometimes we get the wrong msg_type. Fix this explicitly.
+            if char_string == "avg3_101" and msg_type in {0, 3}:
+                msg_type += 1
+
             text = process_text(text)
             show_pfp = False
             if char_string != state.char_string:
