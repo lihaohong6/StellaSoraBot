@@ -29,6 +29,8 @@ class SkillParam:
 
 def get_effect_by_type(type1: int, type2: int) -> Effect:
     effects = [e for e in get_effects() if e.type1 == type1 and e.type2 == type2]
+    if len(effects) == 0:
+        effects = [e for e in get_effects() if e.type1 == type1]
     assert len(effects) > 0
     effect = effects[0]
     return effect
