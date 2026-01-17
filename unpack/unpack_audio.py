@@ -1,7 +1,8 @@
 import subprocess
 from pathlib import Path
 
-from unpack.unpack_paths import sound_dir, unity_asset_dir_1, vendor_library_dir, disc_bgm_wem_dir
+from unpack.unpack_paths import sound_dir, unity_asset_dir_1, bgm_wem_dir
+from utils.audio_utils import get_wwiser_executable_path
 from utils.data_utils import audio_wav_root
 
 
@@ -27,28 +28,17 @@ def export_audio():
 
 
 def export_disc_txtp():
-    wwiser_path = vendor_library_dir / "wwiser"
-    if not wwiser_path.exists():
-        wwiser_path.mkdir(exist_ok=True, parents=True)
-        subprocess.run([
-            "gh", "release", "download", "v20250928",
-            "--repo", "bnnm/wwiser",
-            "--pattern", "wwiser.pyz",
-            "--pattern", "wwnames.db3"
-        ], check=True, cwd=wwiser_path)
-    assert wwiser_path.exists()
-    executable_path = wwiser_path / "wwiser.pyz"
-    assert executable_path.exists()
+    executable_path = get_wwiser_executable_path()
     bnk_path = sound_dir / "Music_Outfit.bnk"
     assert bnk_path.exists()
-    assert disc_bgm_wem_dir.exists()
+    assert bgm_wem_dir.exists()
     subprocess.run(["python", executable_path.absolute(),
                     "--txtp", bnk_path.absolute()],
-                   check=True, cwd=disc_bgm_wem_dir)
+                   check=True, cwd=bgm_wem_dir)
     subprocess.run(["fd", "-e", "txtp", "-x", "sed", "-i", "-E", r's|wem/([0-9]+)\.wem|../\1.media.wem|g'],
-                   check=True, cwd=disc_bgm_wem_dir)
+                   check=True, cwd=bgm_wem_dir)
     subprocess.run(["fd", "-e", "txtp", "-x", "sed", "-i", r"s|wem/Music_Outfit.bnk|../../Music_Outfit.bnk|g"],
-                   check=True, cwd=disc_bgm_wem_dir)
+                   check=True, cwd=bgm_wem_dir)
 
 
 def main():

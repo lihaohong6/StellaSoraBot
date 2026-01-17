@@ -6,6 +6,6 @@ sound_dir = data_dir / "Persistent_Store/SoundBanks"
 unity_asset_dir_1 = data_dir / "StellaSora_Data/StreamingAssets/InstallResource"
 unity_asset_dir_2 = data_dir / "Persistent_Store/AssetBundles"
 text_dir = data_dir / "Persistent_Store/AssetBundles"
-disc_bgm_wem_dir = sound_dir / "Media"
+bgm_wem_dir = sound_dir / "Media"
 vendor_library_dir = Path("vendor")
 vendor_library_dir.mkdir(exist_ok=True, parents=True)

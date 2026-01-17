@@ -11,7 +11,8 @@ from wikitextparser import parse, Template
 
 from character_info.audio import wav_to_ogg
 from character_info.characters import ElementType
-from unpack.unpack_paths import disc_bgm_wem_dir
+from unpack.unpack_paths import bgm_wem_dir
+from utils.audio_utils import wwise_fnv_hash
 from utils.data_utils import autoload, load_json, assets_root, temp_dir
 from utils.skill_utils import skill_escape
 from utils.upload_utils import UploadRequest, process_uploads
@@ -349,15 +350,6 @@ def txtp_to_wav(txtp: Path, wav: Path):
 
 
 def upload_disc_bgms():
-    def wwise_fnv_hash(string):
-        string = string.lower().encode('utf-8')
-        hash_value = 2166136261
-        prime = 16777619
-        for char in string:
-            hash_value = (hash_value * prime) % (2 ** 32)
-            hash_value = hash_value ^ char
-        return hash_value
-
     discs = get_discs()
     upload_requests = []
     audio_dir = Path(f"assets/audio")
@@ -368,7 +360,7 @@ def upload_disc_bgms():
         if not source_ogg.exists():
             vo_file = f"outfit_{disc.disc_bg}"
             hashed = wwise_fnv_hash(vo_file)
-            txtp = disc_bgm_wem_dir / "txtp" / f"Music_Outfit (2212414290=440766949)(1640212992={hashed}).txtp"
+            txtp = bgm_wem_dir / "txtp" / f"Music_Outfit (2212414290=440766949)(1640212992={hashed}).txtp"
             assert txtp.exists()
             source_wav = temp_dir / f"{hashed}.wav"
             txtp_to_wav(txtp, source_wav)
