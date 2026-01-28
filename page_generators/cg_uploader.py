@@ -24,8 +24,23 @@ def upload_cgs():
     process_uploads(upload_requests)
 
 
+def upload_background_images():
+    p = assets_root / "imageavg" / "avgbg"
+    images = p.glob("*.png")
+    upload_requests = []
+    for f in images:
+        upload_requests.append(UploadRequest(
+            f,
+            "File:BG_" + f.name,
+            f"[[Category:Background images]]",
+            "batch upload story background images"
+        ))
+    process_uploads(upload_requests)
+
+
 def main():
     upload_cgs()
+    upload_background_images()
 
 
 if __name__ == "__main__":
