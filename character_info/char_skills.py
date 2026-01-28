@@ -1,148 +1,17 @@
 import re
 from dataclasses import dataclass
-from enum import Enum
 from functools import cache
 from pathlib import Path
 
 from wikitextparser import parse, Template
 
-from character_info.char_advance import get_char_skill_material, material_list_to_template, upgrade_material_to_string
+from character_info.char_advance import get_char_skill_material, upgrade_material_to_string
 from character_info.characters import get_id_to_char, get_character_pages, ElementType, common_name_to_element_type
 from page_generators.items import make_item_template, get_all_items
-from utils.data_utils import autoload, load_json, assets_root
-from utils.skill_utils import skill_escape, get_effects, Effect, get_words
+from utils.data_utils import autoload, assets_root
+from utils.skill_utils import skill_escape, get_words, SkillParam, parse_params, format_desc
 from utils.upload_utils import UploadRequest, process_uploads
 from utils.wiki_utils import force_section_text, set_arg, save_page, save_json_page
-
-
-class SkillParamType(Enum):
-    NONE = 0
-    ASCENSION = 1
-    SKILL_LEVEL = 3
-    BREAKTHROUGH = 4
-
-@dataclass
-class SkillParam:
-    param_type: SkillParamType
-    params: list[int] | int | str
-
-
-def get_effect_by_type(type1: int, type2: int) -> Effect:
-    effects = [e for e in get_effects() if e.type1 == type1 and e.type2 == type2]
-    if len(effects) == 0:
-        effects = [e for e in get_effects() if e.type1 == type1]
-    assert len(effects) > 0
-    effect = effects[0]
-    return effect
-
-def process_param(param: str) -> tuple[SkillParamType, list[int] | int | str]:
-    hint: str = ""
-    dict_key_hint: str = ""
-    segments = param.split(',')
-
-    def normalize_percentage(original_value: float | list[float]) -> str | list[str]:
-        if type(original_value) is list:
-            return [normalize_percentage(v2) for v2 in original_value]
-        try:
-            value = float(original_value)
-        except ValueError:
-            return str(original_value)
-        if hint == "EAT" and segments[-2] == "Enum":
-            enum_dict = {
-                "AttributeType1": "ParameterType1",
-                "AttributeType2": "ParameterType2",
-                "EffectTypeFirstSubtype": "EffectTypeSecondSubtype"
-            }
-            assert dict_key_hint in enum_dict
-            # Special case: this is an effect that needs to be looked up in a table
-            type2 = value_table[key][enum_dict[dict_key_hint]]
-            effect = get_effect_by_type(int(original_value), type2)
-            return effect.desc
-        suffix = "%"
-        if dict_key_hint in {"Time", "CommonData"} or "Fixed" in hint:
-            suffix = ""
-        if "Pct" in hint:
-            suffix = "%"
-        if "10K" in hint:
-            value /= 10000
-        if "HdPct" in hint:
-            value *= 100
-        return f"{value:.1f}{suffix}"
-
-    if len(segments) > 4:
-        hint = segments[-1]
-    else:
-        hint = "10K"
-    file_name = segments[0]
-    data = autoload(file_name)
-    if not data:
-        raise RuntimeError(f"No data found for {file_name}")
-    param_id = segments[2]
-    dict_key_hint = segments[3] if len(segments) > 3 else ""
-    row: dict = data.get(str(param_id), {})
-    param_type = SkillParamType(row.get('levelTypeData', 0))
-    if file_name == "Skill" and dict_key_hint == "Title":
-        return param_type, row["Title"]
-    if row is not None and "SkillPercentAmend" in row:
-        return param_type, normalize_percentage(row["SkillPercentAmend"])
-    if file_name in {"Shield", "Buff", "Effect", "OnceAdditionalAttribute", "ScriptParameter", "EffectValue", "BuffValue", "OnceAdditionalAttributeValue"}:
-        if "Value" in file_name:
-            value_table = data
-        else:
-            value_table = load_json(f"{file_name}Value")
-        cur_id = int(param_id)
-        if str(cur_id) not in value_table:
-            cur_id += 10
-        if str(cur_id) not in value_table:
-            raise RuntimeError(f"{file_name} not found for {param}")
-        result = []
-        for i in range(0, 10):
-            key = str(cur_id + i * 10)
-            # Only 1/2 value(s); terminate early
-            if key not in value_table:
-                if i in {1, 2}:
-                    return param_type, result[0]
-                return param_type, result
-            v = value_table[key][dict_key_hint]
-            v = normalize_percentage(v)
-            result.append(v)
-        return param_type, result
-    return param_type, normalize_percentage(row[dict_key_hint])
-
-
-def parse_param(param_string: str) -> SkillParam:
-    param_type, param = process_param(param_string)
-    if type(param) is not int:
-        if type(param) is not list:
-            param = [param]
-        values: list[str] = param
-        if all(".0" in value for value in values):
-            param = [value.replace(".0", "") for value in values]
-    return SkillParam(param_type, param)
-
-
-def parse_params(d: dict, max_params: int) -> list[SkillParam]:
-    params: list[SkillParam] = []
-    for i in range(1, max_params + 1):
-        param_key = f"Param{i}"
-        if param_key not in d:
-            params.append(SkillParam(SkillParamType.NONE, -1))
-            continue
-        param_text = d[param_key]
-        try:
-            param = parse_param(param_text)
-        except Exception as e:
-            print(d['Id'])
-            print(e)
-            param = SkillParam(SkillParamType.NONE, -1)
-        params.append(param)
-    return params
-
-
-def skill_level_hint(param_type: SkillParamType, original: str) -> str:
-    if param_type in {SkillParamType.ASCENSION, SkillParamType.BREAKTHROUGH}:
-        return "{{SkillLevelHint|" + param_type.name.lower() + "|" + original + "}}"
-    return original
 
 
 @dataclass
@@ -203,40 +72,6 @@ class Skill:
                     append = "<br>Upgrade materials: " + upgrade_materials[index - 1]
                 set_arg(t, f"desc_{index}", desc + append)
         return t
-
-
-def format_desc(desc: str, params: list[SkillParam], level: int, max_level: int = 9) -> str | None:
-    """
-    :param desc:
-    :param params:
-    :param level: Skill level. -1 to force all params to be joined together.
-    :param max_level:
-    :return:
-    """
-    for param_num, skill_param in enumerate(params):
-        search_string = "{" + str(param_num + 1) + "}"
-        if search_string not in desc:
-            continue
-        param = skill_param.params
-        if param == -1:
-            print(f"ERROR: could not format param {param_num + 1} of {desc} at level {level}")
-            return None
-        if type(param) != list:
-            desc = desc.replace(search_string, str(param))
-        else:
-            if level != -1 and skill_param.param_type == SkillParamType.SKILL_LEVEL:
-                desc = desc.replace(search_string, str(param[level]))
-            else:
-                # Sometimes we get filler data with 0s.
-                params = param[:max_level]
-                # Sometimes we get dup values
-                if all(params[0] == p for p in params):
-                    string = params[0]
-                else:
-                    string = "/".join(params)
-                string = skill_level_hint(skill_param.param_type, string)
-                desc = desc.replace(search_string, string)
-    return desc
 
 
 @dataclass

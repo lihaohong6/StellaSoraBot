@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from character_info.char_skills import get_effect_by_type
+from utils.skill_utils import get_effect_by_type
 from utils.data_utils import autoload
 
 

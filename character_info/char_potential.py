@@ -6,10 +6,9 @@ from textwrap import indent
 
 from wikitextparser import Template, parse
 
-from character_info.char_skills import parse_params, SkillParam, format_desc, SkillParamType
 from character_info.characters import Character, id_to_char, get_character_pages
 from utils.data_utils import autoload, data_to_dict, assets_root
-from utils.skill_utils import skill_escape
+from utils.skill_utils import skill_escape, SkillParamType, SkillParam, parse_params, format_desc
 from utils.upload_utils import UploadRequest, process_uploads
 from utils.wiki_utils import set_arg, force_section_text, save_page, PageCreationRequest, process_page_creation_requests
 
