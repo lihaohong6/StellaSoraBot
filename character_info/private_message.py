@@ -206,7 +206,7 @@ def save_private_message_pages() -> None:
             ]
             result.append("\n".join(lines))
         force_section_text(parsed,
-                           section_title="Heartlink Chat",
+                           section_title="Heartlink chat",
                            text="\n\n".join(result),
                            prepend="Invitation stories")
         save_page(page, str(parsed), summary="Update Heartlink chat")

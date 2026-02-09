@@ -7,6 +7,7 @@ from pywikibot import Page
 from wikitextparser import parse, Template
 
 from character_info.characters import get_characters, get_character_pages, get_id_to_char, Character
+from page_generators.archive_notes import update_archive_notes
 from utils.data_utils import autoload, assets_root
 from utils.text_utils import escape_text
 from utils.upload_utils import UploadRequest, process_uploads
@@ -186,6 +187,8 @@ def save_story_page_content():
         else:
             parsed = parse("""{{StoryTop}}
 ==Affinity archives==
+==Heartlink chat==
+==Anecdotes==
 ==Invitation stories==
 """)
         text = affinity_archive_sections(affinity_archives[char.name])
@@ -202,6 +205,7 @@ def get_story_pages() -> dict[Character, Page]:
 def update_character_stories():
     upload_invitation_story_images()
     save_story_page_content()
+    update_archive_notes()
 
 
 def main():
