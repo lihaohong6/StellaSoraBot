@@ -309,7 +309,7 @@ def create_disc_pages():
 ==Harmony Skill==
 
 ==Acquisition==
-
+{{{{DiscAcquisition}}}}
 ==Story==
 
 ==See also==
