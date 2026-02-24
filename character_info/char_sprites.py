@@ -117,7 +117,7 @@ variant_whitelist: dict[str, set[str]] = {
     "Female tyrant": {"a", "b", "c", "d", "e", "f", "g", "h", "i", "l"},
     "Firefly": {"a", "b"},
     "Firenze": {"a", "b", "c", "d"},
-    "Flora": {"b"},
+    "Flora": {"a", "b", "c"},
     "Freesia": {"a", "b", "c", "d"},
     "Fuyuka": {"a", "b", },
     "Gerie": {"a", },
