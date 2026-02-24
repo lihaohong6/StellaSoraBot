@@ -1,4 +1,5 @@
 import re
+import shutil
 import subprocess
 from functools import cache
 from pathlib import Path
@@ -25,6 +26,7 @@ def get_hash_to_txtp_mapping() -> dict[str, Path]:
         check=True,
         cwd=sound_dir,
     )
+    shutil.rmtree(txtp_path, ignore_errors=True)
     (sound_dir / "txtp").rename(txtp_path)
     result: dict[str, Path] = {}
     for file in txtp_path.glob("*.txtp"):
@@ -35,7 +37,7 @@ def get_hash_to_txtp_mapping() -> dict[str, Path]:
     return result
 
 
-def get_sound_effect_path(name: str) -> Path:
+def get_sound_effect_path(name: str) -> Path | None:
     hashed = wwise_fnv_hash(name)
     sound_effect_root = audio_wav_root / "se"
     sound_effect_root.mkdir(parents=True, exist_ok=True)
@@ -45,7 +47,9 @@ def get_sound_effect_path(name: str) -> Path:
     if not ogg_path.exists():
         wav_path = sound_effect_root / f"{name}.wav"
         if not wav_path.exists():
-            txtp_path = get_hash_to_txtp_mapping()[str(hashed)]
+            txtp_path = get_hash_to_txtp_mapping().get(str(hashed), None)
+            if txtp_path is None:
+                return None
             txtp_to_wav(txtp_path, wav_path)
         wav_to_ogg(wav_path, ogg_path)
     return ogg_path
@@ -67,6 +71,7 @@ def get_bgm_hash_to_txtp_mapping() -> dict[str, Path]:
         cwd=sound_dir,
     )
     txtp_path = sound_dir / "music_avg_txtp"
+    shutil.rmtree(txtp_path, ignore_errors=True)
     (sound_dir / "txtp").rename(txtp_path)
 
     result: dict[str, Path] = {}

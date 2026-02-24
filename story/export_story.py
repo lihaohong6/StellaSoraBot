@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from typing import Any, Optional, Dict, List
 
 from story.parse_story import get_story_episodes, StoryEpisode, StoryRow
+from story.story_audio import get_bgm_path, get_sound_effect_path
+from utils.upload_utils import UploadRequest, process_uploads
 
 
 @dataclass
@@ -44,18 +46,18 @@ def story_row_to_messenger(
         expression = row.attributes.get("expression", "00")
 
         speaker_name = character_id_to_speaker_name(speaker)
-        image_path = get_character_sprite_path(speaker_name, variant, expression)
+
+        # Skip image if expression is "00"
+        image_path = None
+        if expression != "00":
+            image_path = get_character_sprite_path(speaker_name, variant, expression)
 
         if speaker_name != current_speaker:
-            result.extend(
-                [
-                    "| message",
-                    f"| name :: {speaker_name}",
-                    f"| image :: {image_path}",
-                    f"| text :: {text}",
-                    "",
-                ]
-            )
+            message_parts = ["| message", f"| name :: {speaker_name}"]
+            if image_path:
+                message_parts.append(f"| image :: {image_path}")
+            message_parts.extend([f"| text :: {text}", ""])
+            result.extend(message_parts)
         else:
             result.extend(["| message", f"| text :: {text}", ""])
         return result
@@ -72,24 +74,29 @@ def story_row_to_messenger(
 
     if row.name == "background":
         bg_image = row.attributes.get("image", "")
-        if bg_image and bg_image != "BG_Black":
+        if bg_image and bg_image != "bg_black":
+            if not bg_image.startswith("story"):
+                bg_image = f"BG_{bg_image}"
             result.extend(
                 ["| raw", f"| content :: {{{{Story/background | {bg_image}}}}}", ""]
             )
         return result
 
     if row.name == "bgm":
-        bgm_file = row.attributes.get("file", "")
         action = row.attributes.get("action", "play")
 
-        if bgm_file and action == "play":
-            result.extend(["| raw", f"| content :: {{{{Audio|{bgm_file}}}}}", ""])
+        if action == "play":
+            bgm_file = row.attributes.get("file", "")
+            if bgm_file and bgm_file.startswith("m"):
+                result.extend(["| raw", f"| content :: {{{{Story/bgm|Bg{bgm_file}.ogg}}}}", ""])
+        elif action == "stop":
+            result.extend(["| raw", "| content :: {{Story/bgm stop}}", ""])
         return result
 
     if row.name == "sound_effect":
         se_file = row.attributes.get("file", "")
         if se_file:
-            result.extend(["| raw", f"| content :: {{{{Audio|{se_file}}}}}", ""])
+            result.extend(["| raw", f"| content :: {{{{Audio|{se_file}.ogg}}}}", ""])
         return result
 
     if row.name == "clear":
@@ -178,36 +185,69 @@ def process_story_branches(episodes: Dict[str, StoryEpisode]) -> Dict[str, Story
 
 
 def main():
-    print("Loading and parsing story episodes...")
     episodes = get_story_episodes()
-    print(f"Loaded {len(episodes)} story episodes")
-
+    export_bgm_files(episodes)
+    export_sound_effects(episodes)
     exports = process_story_branches(episodes)
-    print(f"Processed into {len(exports)} story exports")
 
-    print("\n" + "=" * 50)
-    print("STORY EXPORT RESULTS")
-    print("=" * 50)
-
-    for export_id, export_data in sorted(exports.items()):
-        print(f"\n--- Story: {export_id} ---")
-        print(f"Title: {export_data.title}")
-        if export_data.subtitle:
-            print(f"Subtitle: {export_data.subtitle}")
+    # Get the first story export
+    first_export_id = min(exports.keys()) if exports else None
+    if first_export_id:
+        export_data = exports[first_export_id]
 
         if export_data.branches:
-            print("Branches found:")
-            for branch_id in sorted(export_data.branches.keys()):
-                print(f"  - {branch_id}")
-
-            print(f"\nTabbed content for {export_id}:")
-            tabs_content = create_branch_tabs(export_data.branches, export_id)
-            print(tabs_content)
+            # If it has branches, output the tabbed content
+            print(create_branch_tabs(export_data.branches, first_export_id))
         else:
-            print(f"\nMessenger template for {export_id}:")
+            # If it's a single story, output the messenger template
             print(export_data.main_content)
 
-    print("\nExport complete!")
+
+def export_bgm_files(episodes: dict[str, StoryEpisode]):
+    bgm_files: set[str] = set()
+    for episode in episodes.values():
+        for row in episode.rows:
+            if row.name == "bgm":
+                bgm_file = row.attributes.get("file", "")
+                if bgm_file:
+                    bgm_files.add(bgm_file)
+    upload_requests = []
+    for bgm in sorted(bgm_files):
+        assert bgm.startswith("m")
+        path = get_bgm_path(bgm)
+        upload_requests.append(UploadRequest(
+            path,
+            f"File:Bg{bgm}.ogg",
+            "[[Category:Story BGMs]]",
+            'batch upload story bgms')
+        )
+    process_uploads(upload_requests)
+
+
+def export_sound_effects(episodes: dict[str, StoryEpisode]):
+    sound_effects: set[str] = set()
+    for episode in episodes.values():
+        for row in episode.rows:
+            if row.name == "sound_effect":
+                se_file = row.attributes.get("file", "")
+                if se_file:
+                    sound_effects.add(se_file)
+    upload_requests = []
+    for se in sorted(sound_effects):
+        if not se.startswith("se"):
+            continue
+        if "stop" in se:
+            continue
+        path = get_sound_effect_path(se)
+        if path is None:
+            continue
+        upload_requests.append(UploadRequest(
+            path,
+            f"File:{se}.ogg",
+            "[[Category:Sound effects]]",
+            'batch upload story sound effects')
+        )
+    process_uploads(upload_requests)
 
 
 if __name__ == "__main__":

@@ -4,8 +4,7 @@ from functools import cache
 from typing import Any, Optional
 
 from character_info.char_sprites import get_avg_characters
-from character_info.characters import id_to_char
-from utils.data_utils import load_lua_table, lua_root
+from utils.data_utils import load_lua_table
 from utils.text_utils import escape_text
 
 
@@ -140,32 +139,28 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
 
         def set_bgm():
             track_type = params[0]
-            bgm_file = params[1]
-            bgm_track = params[3]
-            fade_time = params[4]
+            bgm_file = params[3]
 
             rows.append(
                 StoryRow(
                     "bgm",
                     {
-                        "action": "stop" if track_type == 1 else "play",
-                        "file": bgm_file,
-                        "track": bgm_track,
-                        "fade": fade_time,
+                        "action": "play"
+                        if track_type == 0
+                        else "stop",  # 0 = play, 1 = stop
+                        "file": bgm_file
                     },
                 )
             )
 
         def set_bg():
-            bg_layer = params[0]
-            bg_image = params[1]
+            bg_image: str = params[1]
 
             rows.append(
                 StoryRow(
                     "background",
                     {
-                        "layer": str(bg_layer),
-                        "image": bg_image,
+                        "image": bg_image.lower(),
                     },
                 )
             )
@@ -191,25 +186,19 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
             )
 
         def set_audio():
-            audio_type = params[0]
             audio_file = params[1]
-            volume = params[2]
 
             rows.append(
                 StoryRow(
                     "sound_effect",
                     {
-                        "type": str(audio_type),
                         "file": audio_file,
-                        "volume": str(volume),
                     },
                 )
             )
 
         def set_char():
             # Character positioning and sprite changes
-            char_layer = params[0]
-            char_position = params[1]
             char_id = params[3]
             char_part = params[4]
             char_expression = params[5]
@@ -224,8 +213,6 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
                 StoryRow(
                     "character",
                     {
-                        "layer": str(char_layer),
-                        "position": str(char_position),
                         "character": character_name,
                         "character_id": char_id,
                         "part": char_part,
@@ -278,65 +265,31 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
     return StoryEpisode(episode_id, title, subtitle, description, rows)
 
 
-def get_story_episodes() -> dict[str, StoryEpisode]:
-    """Parse all story episode files (stm*.lua) and return a dictionary of episodes."""
-    story_root = "game/ui/avg/_en/config/"
-    result: dict[str, StoryEpisode] = {}
-
-    # Find all stm*.lua files in the story config directory
-    from pathlib import Path
-
-    story_path = Path(lua_root) / "game/ui/avg/_en/config"
-    episode_files = [f.name for f in story_path.glob("stm*.lua") if f.is_file()]
-
-    for filename in episode_files:
-        if filename.startswith("stm") and filename.endswith(".lua"):
-            episode_id = filename[:-4]  # Remove .lua extension
-            filepath = story_root + filename
-            data = load_lua_table(filepath)
-            if data is not None:
-                episode = parse_story_episode(episode_id, data)
-                result[episode_id] = episode
-            else:
-                print(f"WARNING: Could not load story file {filepath}")
-
+@cache
+def load_story_files() -> dict[str, dict | list]:
+    result = {}
+    for chapter in range(0, 10):
+        for episode in range(0, 20):
+            for suffix in ["", "_a", "_b", "_c"]:
+                filename = f"stm{chapter:02d}_{episode:02d}{suffix}.lua"
+                full_path = "game/ui/avg/_en/config/" + filename
+                table = load_lua_table(full_path)
+                if table is not None:
+                    result[filename.split(".")[0]] = table
     return result
 
 
-def export_bgm_files(episodes: dict[str, StoryEpisode]):
-    """Placeholder function for exporting BGM files."""
-    print("Placeholder: Export BGM files")
-    # This would extract all unique BGM files referenced in episodes
-    # and export/copy them to appropriate locations
-    bgm_files = set()
-    for episode in episodes.values():
-        for row in episode.rows:
-            if row.name == "bgm":
-                bgm_file = row.attributes.get("file", "")
-                if bgm_file:
-                    bgm_files.add(bgm_file)
+@cache
+def get_story_episodes() -> dict[str, StoryEpisode]:
+    result: dict[str, StoryEpisode] = {}
 
-    print(f"Found {len(bgm_files)} unique BGM files")
-    for bgm in sorted(bgm_files):
-        print(f"  - {bgm}")
+    episode_files = load_story_files()
 
+    for filename, data in episode_files.items():
+        episode = parse_story_episode(filename, data)
+        result[filename] = episode
 
-def export_background_images(episodes: dict[str, StoryEpisode]):
-    """Placeholder function for exporting background images."""
-    print("Placeholder: Export background images")
-    # This would extract all unique background images referenced in episodes
-    # and export/copy them to appropriate locations
-    bg_images = set()
-    for episode in episodes.values():
-        for row in episode.rows:
-            if row.name == "background":
-                bg_image = row.attributes.get("image", "")
-                if bg_image:
-                    bg_images.add(bg_image)
-
-    print(f"Found {len(bg_images)} unique background images")
-    for bg in sorted(bg_images):
-        print(f"  - {bg}")
+    return result
 
 
 def handle_story_branches(episodes: dict[str, StoryEpisode]):
@@ -375,8 +328,6 @@ def main():
         print(f"Rows: {len(episode.rows)}")
 
     # Placeholder functions for exporting assets
-    export_bgm_files(episodes)
-    export_background_images(episodes)
     handle_story_branches(episodes)
 
 
