@@ -60,7 +60,7 @@ def char_stats_to_template(stats: list[LevelStats],
     control = Template("{{StatDisplay/control\n}}")
     set_arg(control, "name", "affinity")
     set_arg(control, "label", "Affinity: ")
-    set_arg(control, "levels", ",".join(str(i) for i in range(0, 51)))
+    set_arg(control, "levels", ",".join(str(i) for i in range(0, 68)))
     result.append(str(control))
 
     control = Template("{{StatDisplay/control\n}}")
