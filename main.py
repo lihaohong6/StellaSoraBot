@@ -11,6 +11,7 @@ from character_info.char_sprites import char_gallery_page
 from character_info.char_stats import update_character_stats
 from character_info.char_story import update_character_stories
 from character_info.private_message import update_private_messages
+from page_generators.cg_uploader import cg_uploader_main
 from page_generators.discs import update_disc_all
 from unpack.unpack_main import export_all_assets
 from utils.data_utils import autoload_all_files
@@ -34,6 +35,7 @@ def main():
     autoload_all_files()
     export_all_assets()
     update_character_page()
+    cg_uploader_main()
     update_disc_all()
 
 

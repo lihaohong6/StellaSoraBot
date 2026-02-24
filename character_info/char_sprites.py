@@ -111,6 +111,7 @@ variant_whitelist: dict[str, set[str]] = {
     "Cosson": {"a"},
     "Darcia": {"a", "b", "c", "d"},
     "Donna": {"a"},
+    "Edda": {"a", "b"},
     "Eleanor": {"b"},
     "Fannie": {"a"},
     "Feagin": {"a"},
@@ -120,7 +121,7 @@ variant_whitelist: dict[str, set[str]] = {
     "Flora": {"a", "b", "c"},
     "Freesia": {"a", "b", "c", "d"},
     "Fuyuka": {"a", "b", },
-    "Gerie": {"a", },
+    "Gerie": {"a", "b", "c", },
     "Horizon": {"a"},
     "Igna": {"a"},
     "Iris": {"a", "b", "c", "d", "e"},
@@ -165,6 +166,7 @@ variant_whitelist: dict[str, set[str]] = {
     "Virigia": {"a"},
     "Vollara": {"a"},
     "Willow": {"a", },
+    "Wraith": {"a", "b", "c", },
     "Yunshu": {"a"},
 }
 

@@ -38,10 +38,10 @@ def upload_background_images():
     process_uploads(upload_requests)
 
 
-def main():
+def cg_uploader_main():
     upload_cgs()
     upload_background_images()
 
 
 if __name__ == "__main__":
-    main()
+    cg_uploader_main()
