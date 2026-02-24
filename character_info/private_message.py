@@ -180,11 +180,13 @@ def get_private_messages() -> dict[str, CharacterMessages]:
     pm_root = "game/ui/avg/_en/config/"
     result: dict[str, CharacterMessages] = {}
     for char_name, char in get_characters().items():
-        pm_path = pm_root + f"pm{char.id}01.lua"
-        data = load_lua_table(pm_path)
-        if data is None:
-            print(f"ERROR: {char_name}'s PM file {pm_path} does not exist")
-            continue
+        data = []
+        for i in range(1, 3):
+            pm_path = pm_root + f"pm{char.id}0{i}.lua"
+            d = load_lua_table(pm_path)
+            if d is not None:
+                data.extend(d)
+        assert len(data) >= 10
         messages = parse_private_messages(char, data)
         result[char_name] = messages
     return result
