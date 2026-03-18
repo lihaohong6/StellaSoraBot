@@ -6,6 +6,7 @@ from character_info.char_affinity import affinity_main
 from character_info.char_images import upload_char_images
 from character_info.char_infobox import update_infobox
 from character_info.char_potential import potential_main
+from character_info.char_profile import update_character_profile
 from character_info.char_skills import skill_main
 from character_info.char_sprites import char_gallery_page
 from character_info.char_stats import update_character_stats
@@ -28,6 +29,7 @@ def update_character_page():
     update_private_messages()
     char_gallery_page()
     generate_audio_page()
+    update_character_profile()
 
 
 def main():
