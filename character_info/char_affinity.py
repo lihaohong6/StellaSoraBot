@@ -112,7 +112,8 @@ def get_affinity_levels() -> dict[int, list[AffinityLevel]]:
 
 
 def affinity_main():
-    gifts_main()
+    # Manual changes have been made
+    # gifts_main()
     for char, page in get_character_pages().items():
         parsed = parse(page.text)
         section = find_section(parsed, "Affinity")

@@ -170,6 +170,8 @@ def get_discs() -> dict[int, Disc]:
     for k, v in data.items():
         disc = Disc(id=int(k))
         item = items[k]
+        if k not in disc_ips:
+            continue
         disc_ip = disc_ips[k]
         disc.name = item["Title"]
         if disc.name == "???":
