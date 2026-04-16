@@ -72,7 +72,7 @@ def skill_escape_word(o: str) -> str:
             return "{{word|" + word.name + "|" + word.icon + "}}"
         return word
 
-    o, _ = re.subn(r'##([^#]+)#([^#]+)#', get_word, o)
+    o, _ = re.subn(r'##([^#]+)#(\d+)#', get_word, o)
     return o
 
 
