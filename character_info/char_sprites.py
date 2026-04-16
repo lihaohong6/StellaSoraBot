@@ -113,15 +113,17 @@ variant_whitelist: dict[str, set[str]] = {
     "Donna": {"a", "b", },
     "Edda": {"a", "b"},
     "Eleanor": {"b"},
+    "Erinis": {"a"},
     "Fannie": {"a"},
     "Feagin": {"a"},
-    "Female tyrant": {"a", "b", "c", "d", "e", "f", "g", "h", "i", "l"},
+    "Female tyrant": {"a", "b", "c", "d", "e", "f", "g", "h", "i", "l", "aa", "ab"},
     "Firefly": {"a", "b"},
     "Firenze": {"a", "b", "c", "d"},
     "Flora": {"a", "b", "c"},
     "Freesia": {"a", "b", "c", "d"},
     "Fuyuka": {"a", "b", },
     "Gerie": {"a", "b", "c", },
+    "Hazana": {"a", "b"},
     "Horizon": {"a"},
     "Igna": {"a"},
     "Iris": {"a", "b", "c", "d", "e"},
@@ -136,12 +138,14 @@ variant_whitelist: dict[str, set[str]] = {
     "Lady Gray": {"a"},
     "Laru": {"a", "b"},
     "Leafia": {"a"},
-    "Male tyrant": {"a", "b", "c", "d", "e", "f", "g", "h", "i", "l"},
+    "Male tyrant": {"a", "b", "c", "d", "e", "f", "g", "h", "i", "l", "aa", "ab"},
     "Marlene": {"a", "b"},
+    "Matilda": {"a"},
     "Mina": {"a"},
     "Minova": {"a", "b"},
     "Miss Witch": {"a"},
     "Mistique": {"a", "b", "c", "d", "e", },
+    "Myrsha": {"a"},
     "Nanoha": {"a", "b"},
     "Nazuka": {"a", "c"},
     "Nazuna": {"a", "b"},
@@ -151,13 +155,16 @@ variant_whitelist: dict[str, set[str]] = {
     "Nyx": {"a", "b"},
     "Okra": {"a"},
     "Ophir": {"a"},
+    "Otoha": {"a", "b", "c", "d"},
     "Portia": {"a"},
     "Ridge": {"a"},
+    "Rovina": {"a"},
     "Ruby": {"a"},
     "Sapphire": {"a"},
     "Serena": {"a"},
     "Shia": {"a", "b"},
     "Shimiao": {"a"},
+    "Shuo": {"a", "b"},
     "Snowish Laru": {"a", "b"},
     "Springseek Coronis": {"a"},
     "Teresa": {"a"},
@@ -165,7 +172,7 @@ variant_whitelist: dict[str, set[str]] = {
     "Noctiluna": {"a"},
     "Virigia": {"a"},
     "Vollara": {"a"},
-    "Willow": {"a", },
+    "Willow": {"a", "b", },
     "Wraith": {"a", "b", "c", },
     "Yunshu": {"a"},
 }
@@ -269,7 +276,7 @@ def export_sprites() -> dict[str, dict[str, list[Sprite]]]:
 def filter_sprites(char_name: str, sprite_dict: dict[str, list[Sprite]]) -> dict[str, list[Sprite]]:
     result = {}
     for variant in sorted(sprite_dict.keys()):
-        if len(variant) == 1 and variant not in variant_whitelist[char_name]:
+        if len(variant) <= 2 and variant not in variant_whitelist[char_name]:
             continue
         sprites = sprite_dict[variant]
         # Manually exclude a bad image
