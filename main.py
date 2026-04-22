@@ -27,7 +27,8 @@ def update_character_page():
     potential_main()
     update_character_stories()
     update_private_messages()
-    char_gallery_page()
+    # Don't update this: need manual overrides
+    # char_gallery_page()
     generate_audio_page()
     update_character_profile()
 

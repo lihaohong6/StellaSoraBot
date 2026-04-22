@@ -123,7 +123,8 @@ def get_invitation_stories() -> dict[str, list[InvitationStory]]:
         desc = "\n\n".join(v[f"Desc{i}"] for i in range(1, 10) if f"Desc{i}" in v)
         clue = v['Clue']
         landmark = re.search(r"the (.*) to unlock", clue)
-        assert landmark is not None
+        if landmark is None:
+            landmark = re.search(r"^Visit (.*) to unlock", clue)
         landmark = landmark.group(1)
         branch = v['BranchTag']
         option = get_landmark_option(landmark, branch)
@@ -168,6 +169,7 @@ def invitation_story_sections(stories: list[InvitationStory]) -> str:
     for story in stories:
         result.append(f"==={story.name}===")
         template = Template("{{InvitationStory\n}}")
+        set_arg(template, "title", story.name)
         set_arg(template, "file", story.file_page)
         set_arg(template, "clue", story.clue)
         set_arg(template, "landmark", story.landmark)
