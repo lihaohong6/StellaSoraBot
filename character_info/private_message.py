@@ -192,11 +192,21 @@ def get_private_messages() -> dict[str, CharacterMessages]:
     return result
 
 
+@cache
+def get_private_message_sig() -> dict[str, str]:
+    t = load_lua_table("game/ui/avg/_en/preset/avgcontacts.lua")
+    result: dict[str, str] = {}
+    for row in t:
+        result[row['name'].strip()] = row['signature'].strip()
+    return result
+
+
 def save_private_message_pages() -> None:
     messages = get_private_messages()
+    signatures = get_private_message_sig()
     for char, page in get_story_pages().items():
         parsed = parse(page.text)
-        result = []
+        result = ["''" + signatures[char.name] + "''"]
         if char.name not in messages:
             continue
         for index, conversation in enumerate(messages[char.name].messages, 1):
