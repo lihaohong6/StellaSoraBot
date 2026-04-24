@@ -89,94 +89,26 @@ def retrieve_sprite_json_data(f: Path) -> SpriteData | None:
     return SpriteData(data['x'], data['y'], data['width'], data['height'])
 
 
-variant_whitelist: dict[str, set[str]] = {
-    "Aeloria": {"a", "b"},
-    "Aeloria Rose": {"a"},
-    "Albedo": {"a"},
-    "Amber": {"a", "b", "c", "d", "e", "f", "g", },
-    "Angie": {"a", "b"},
-    "Ann": {"a"},
-    "Bastelina": {"a"},
-    "Beatrixa": {"a"},
-    "Bernina": {"a", },
-    "Bloc": {"a"},
-    "Canace": {"a", "c", },
-    "Caramel": {"a"},
-    "Charlotte": {"a"},
-    "Chitose": {"a", "b"},
-    "Chixia": {"a"},
-    "Claire": {"a"},
-    "Coronis": {"a"},
-    "Cosette": {"a", "b"},
-    "Cosson": {"a"},
-    "Darcia": {"a", "b", "c", "d"},
-    "Donna": {"a", "b", },
-    "Edda": {"a", "b"},
-    "Eleanor": {"b"},
-    "Erinis": {"a"},
-    "Fannie": {"a"},
-    "Feagin": {"a"},
-    "Female tyrant": {"a", "b", "c", "d", "e", "f", "g", "h", "i", "l", "aa", "ab"},
-    "Firefly": {"a", "b"},
-    "Firenze": {"a", "b", "c", "d"},
-    "Flora": {"a", "b", "c"},
-    "Freesia": {"a", "b", "c", "d"},
-    "Fuyuka": {"a", "b", },
-    "Gerie": {"a", "b", "c", },
-    "Hazana": {"a", "b"},
-    "Horizon": {"a"},
-    "Igna": {"a"},
-    "Iris": {"a", "b", "c", "d", "e"},
-    "Isaki": {"a"},
-    "Jayhawk": {"a"},
-    "Jinglin": {"a"},
-    "Jiyue": {"a"},
-    "Kaede": {"a"},
-    "Karin": {"a", "b", "c", "d"},
-    "Kaydoke": {"a"},
-    "Kasimira": {"a"},
-    "Lady Gray": {"a"},
-    "Laru": {"a", "b"},
-    "Leafia": {"a"},
-    "Male tyrant": {"a", "b", "c", "d", "e", "f", "g", "h", "i", "l", "aa", "ab"},
-    "Marlene": {"a", "b"},
-    "Matilda": {"a"},
-    "Meikyo": {"a"},
-    "Mina": {"a"},
-    "Minova": {"a", "b"},
-    "Miss Witch": {"a"},
-    "Mistique": {"a", "b", "c", "d", "e", },
-    "Myrsha": {"a"},
-    "Nanoha": {"a", "b"},
-    "Nazuka": {"a", "c"},
-    "Nazuna": {"a", "b"},
-    "Neuvira": {"a", },
-    "Noya": {"a", "b", "c", "d", "e", },
-    "Nuz": {"a"},
-    "Nyx": {"a", "b"},
-    "Okra": {"a"},
-    "Ophir": {"a"},
-    "Otoha": {"a", "b", "c", "d"},
-    "Portia": {"a"},
-    "Ridge": {"a"},
-    "Rovina": {"a"},
-    "Ruby": {"a"},
-    "Sapphire": {"a"},
-    "Serena": {"a"},
-    "Shia": {"a", "b"},
-    "Shimiao": {"a"},
-    "Shuo": {"a", "b"},
-    "Snowish Laru": {"a", "b"},
-    "Springseek Coronis": {"a"},
-    "Teresa": {"a"},
-    "Tilia": {"a", "b", "c", "d", "e", },
-    "Treasure Hunter Leader": {"a", },
-    "Noctiluna": {"a"},
-    "Virigia": {"a"},
-    "Vollara": {"a"},
-    "Willow": {"a", "b", },
-    "Wraith": {"a", "b", "c", },
-    "Yunshu": {"a"},
+chars_blacklist: set[str] = {
+    "Alpha Boar", "Aobelle", "Ash District Boy",
+    "Aspara", "Coco", "Cool Gang Lady", "Deepsea Finance Female Employee",
+    "Female Corp Clerk",
+    "Female Employee", "Female Flavio Resident", "Gang Girl",
+    "Generic Elderly Villager Female",
+    "Generic Loong Girl", "Generic Resident Female", "Generic Resident Male",
+    "Generic Trekker Female", "Generic Trekker Male", "Gold District Resident A",
+    "Gold District Resident B", "Gold District Resident C", "Grace Light Academy Student",
+    "Grace Receptionist", "Grandpa Chai", "Kieb",
+    "Loong Resident", "Male Flavio Resident", "Shrubshrew Grenadier",
+    "Shrubshrew Stake", "Shrubshrew Thug", "Student", "Trekker Soldier",
+    "Vita", "Wandering Birds Trekker", "White Cat Mercenary", "Witch", "Ya",
+}
+
+variant_blacklist: dict[str, set[str]] = {
+    "Cosette": {"c"},
+    "Female tyrant": {"ac", "ad", "p", "q", "s", "t", "u", "v", "w", "x", "y", "z"},
+    "Male tyrant": {"ac", "ad", "p", "q", "s", "t", "u", "v", "w", "x", "y", "z"},
+    "Shimiao": {"b"},
 }
 
 
@@ -277,8 +209,9 @@ def export_sprites() -> dict[str, dict[str, list[Sprite]]]:
 
 def filter_sprites(char_name: str, sprite_dict: dict[str, list[Sprite]]) -> dict[str, list[Sprite]]:
     result = {}
+    blacklisted = variant_blacklist.get(char_name, set())
     for variant in sorted(sprite_dict.keys()):
-        if len(variant) <= 2 and variant not in variant_whitelist[char_name]:
+        if variant in blacklisted:
             continue
         sprites = sprite_dict[variant]
         # Manually exclude a bad image
@@ -293,7 +226,7 @@ def get_char_sprites() -> dict[str, dict[str, list[Sprite]]]:
     result: dict[str, dict[str, list[Sprite]]] = {}
     sprites = export_sprites()
     for char_name, sprite_dict in sprites.items():
-        if char_name not in variant_whitelist:
+        if char_name in chars_blacklist:
             continue
         result[char_name] = filter_sprites(char_name, sprite_dict)
     return result
@@ -307,6 +240,9 @@ def upload_sprites():
     for char_name, sprite_dict in sprites.items():
         json_data[char_name] = {}
         for variant_name, sprite_list in sprite_dict.items():
+            # FIXME: they should be uploaded as single images without stitching instead of discarded outright
+            if len(sprite_list) == 1:
+                continue
             json_data[char_name][variant_name] = []
             for sprite in sprite_list:
                 if sprite.number == 1:
@@ -319,6 +255,8 @@ def upload_sprites():
                     summary='batch upload sprites'
                 ))
                 json_data[char_name][variant_name].append(sprite.combined.stem.split("_")[-1])
+        if len(json_data[char_name]) == 0:
+            continue
         page_creation_requests.append(PageCreationRequest(
             page=f"Category:{char_name} images",
             text="{{Catnav|Images by character}}\n[[Category:Images by character]]",
@@ -332,6 +270,7 @@ def upload_sprites():
         ))
     process_uploads(upload_requests)
     process_page_creation_requests(page_creation_requests, overwrite=True)
+    json_data = dict((k, v) for k,v in json_data.items() if len(v) > 0)
     save_json_page("Module:Sprite/data.json", json_data, summary="update json page")
 
 

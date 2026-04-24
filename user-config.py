@@ -11,3 +11,5 @@ maxthrottle = 20
 noisysleep = 1
 
 put_throttle = 1
+
+user_agent_format = "Test bot by User:PetraMagna"
