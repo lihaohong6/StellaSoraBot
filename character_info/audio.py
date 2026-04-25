@@ -1,3 +1,4 @@
+import re
 import subprocess
 from collections import defaultdict
 from dataclasses import dataclass
@@ -6,12 +7,13 @@ from itertools import groupby
 from pathlib import Path
 
 from pywikibot import Page
+from pywikibot.pagegenerators import PreloadingGenerator
 from wikitextparser import Template
 
 from character_info.characters import Character, get_characters, get_character_pages
 from utils.data_utils import autoload, load_json_from_path, en_root, jp_root, audio_wav_root, temp_dir, cn_root
 from utils.upload_utils import UploadRequest, process_uploads
-from utils.wiki_utils import save_page
+from utils.wiki_utils import save_page, s
 
 
 @dataclass
@@ -66,6 +68,32 @@ voice_title_mapping = {
     "birth": "Trekker birthday",
 }
 
+login_npc_event_title = {
+    'Xmas25': "Christmas 2025",
+    'NewYear26': "New Year 2026",
+    'Valentine26': "Valentine's Day 2026",
+    'ChineseNewYear26': "Chinese New Year 2026",
+    'HalfAnniversary': "Half Anniversary",
+}
+
+npc_voice_title_mapping = {
+    'greet_npc': "Greeting",
+    'greetmorn_npc': "Morning",
+    'greetnoon_npc': "Afternoon",
+    'greetnight_npc': "Night",
+    'posterchat_npc': "Conversation",
+    'hfc_npc': "Favorability Cap",
+    'hang_npc': "Hanging Out",
+    'exhang_npc': "Farewell",
+    'clear': "Area Clear",
+    'twin_greet': "Twin Greeting",
+    'thank_npc': "Thank You",
+    'thankLvup': "Level Up",
+    'thanksp': "Special Thank You",
+    'limited': "Limited",
+    'onsale': "On Sale",
+}
+
 
 def append_vo_directory_data(result: dict[int, list[AudioLine]]):
     existing_sources: set[str] = set()
@@ -73,18 +101,38 @@ def append_vo_directory_data(result: dict[int, list[AudioLine]]):
         for line in lst:
             existing_sources.add(line.source)
     data = autoload("VoDirectory")
-    vo_types: set[str] = set()
     for k, v in data.items():
         voice_id = int(k)
         source = v['voResource']
         if source in existing_sources:
             continue
-        char_id = v['characterId']
+        voice_type = v['votype']
+
+        if voice_type.startswith('login_npc_day'):
+            # Event login voice lines
+            m = re.match(r'vo_LoginNpc(\d+)_(.+)_day\d+', source)
+            if m is None:
+                continue
+            char_id = int(m.group(1))
+            event = m.group(2)
+            if event not in login_npc_event_title:
+                print(f"Audio: unknown login NPC event {event!r} in {source}")
+                continue
+            title = login_npc_event_title[event]
+            sort_key = len(voice_title_mapping)
+        else:
+            char_id = v['characterId']
+            if voice_type not in voice_title_mapping:
+                continue
+            title = voice_title_mapping[voice_type]
+            sort_key = list(voice_title_mapping.keys()).index(voice_type)
+
         if char_id not in result:
             continue
-        voice_type = v['votype']
-        title = voice_title_mapping[voice_type]
-        transcription_jp, transcription_cn, translation = get_transcriptions(source)
+        transcriptions = get_transcriptions(source)
+        if transcriptions is None:
+            continue
+        transcription_jp, transcription_cn, translation = transcriptions
         result[char_id].append(AudioLine(
             id=voice_id,
             title=title,
@@ -93,7 +141,7 @@ def append_vo_directory_data(result: dict[int, list[AudioLine]]):
             transcription_cn=transcription_cn,
             translation=translation,
             voice_type=3,
-            sort_key=list(voice_title_mapping.keys()).index(voice_type)
+            sort_key=sort_key,
         ))
 
 
@@ -199,6 +247,59 @@ def get_character_audio_pages() -> dict[Character, Page]:
     return get_character_pages(suffix="/audio", must_exist=False)
 
 
+@cache
+def get_npc_id_to_name() -> dict[int, str]:
+    data = autoload("NPCConfig")
+    result = {}
+    for v in data.values():
+        npc_id = v['Id']
+        if npc_id >= 9000:
+            result[npc_id] = v['Name']
+    return result
+
+
+@cache
+def get_npc_audio() -> dict[str, list[AudioLine]]:
+    npc_id_to_name = get_npc_id_to_name()
+    result: dict[str, list[AudioLine]] = {name: [] for name in npc_id_to_name.values()}
+    data = autoload("VoDirectory")
+    for k, v in data.items():
+        char_id = v['characterId']
+        votype = v['votype']
+        source = v['voResource']
+        if votype.startswith('login_npc'):
+            continue
+        base_id = char_id // 100 if char_id >= 100000 else char_id
+        if base_id not in npc_id_to_name:
+            continue
+        if votype not in npc_voice_title_mapping:
+            continue
+        transcriptions = get_transcriptions(source)
+        if transcriptions is None:
+            continue
+        tr_jp, tr_cn, translation = transcriptions
+        npc_name = npc_id_to_name[base_id]
+        sort_key = list(npc_voice_title_mapping.keys()).index(votype)
+        result[npc_name].append(AudioLine(
+            id=int(k),
+            title=npc_voice_title_mapping[votype],
+            source=source,
+            transcription_jp=tr_jp,
+            transcription_cn=tr_cn,
+            translation=translation,
+            voice_type=1,
+            sort_key=sort_key,
+        ))
+    return {name: sorted(lines, key=lambda l: l.sort_key)
+            for name, lines in result.items() if lines}
+
+
+def get_npc_audio_pages() -> dict[str, Page]:
+    npc_names = list(get_npc_id_to_name().values())
+    gen = PreloadingGenerator(Page(s, name + "/audio") for name in npc_names)
+    return {page.title().split("/")[0]: page for page in gen}
+
+
 def lines_to_template(lines: list[AudioLine]) -> str:
     result = []
     for line in lines:
@@ -240,6 +341,23 @@ def generate_audio_page():
         save_page(page, "\n".join(result), summary="update voice lines page")
 
 
+def generate_npc_audio_page():
+    audio = get_npc_audio()
+    pages = get_npc_audio_pages()
+    for npc_name, page in pages.items():
+        if npc_name not in audio:
+            continue
+        lines = audio[npc_name]
+        upload_audio_files(npc_name, lines)
+        result = ["{{TrekkerAudioTop}}",
+                  "",
+                  "==Voice Lines==",
+                  lines_to_template(lines),
+                  "",
+                  "{{TrekkerAudioBottom}}"]
+        save_page(page, "\n".join(result), summary="update NPC voice lines page")
+
+
 def should_process_char_audio(char: str | int) -> bool:
     # Change the allow list to permit only a subset of character audio pages to be updated
     # allow_list = [get_characters()['Shia']]
@@ -255,6 +373,7 @@ def should_process_char_audio(char: str | int) -> bool:
 
 def main():
     generate_audio_page()
+    generate_npc_audio_page()
 
 
 if __name__ == '__main__':
