@@ -11,7 +11,7 @@ from pywikibot.pagegenerators import PreloadingGenerator
 from wikitextparser import Template
 
 from character_info.characters import Character, get_characters, get_character_pages
-from utils.data_utils import autoload, load_json_from_path, en_root, jp_root, audio_wav_root, temp_dir, cn_root
+from utils.data_utils import autoload, load_json_from_path, en_root, jp_root, audio_wav_root, temp_dir, cn_root, string_postprocessor
 from utils.upload_utils import UploadRequest, process_uploads
 from utils.wiki_utils import save_page, s
 
@@ -92,6 +92,27 @@ npc_voice_title_mapping = {
     'thanksp': "Special Thank You",
     'limited': "Limited",
     'onsale': "On Sale",
+    'Tower_typeA': "Tower_typeA",
+    'Tower_typeB': "Tower_typeB",
+    'Tower_typeC': "Tower_typeC",
+    'final': "final",
+    'leave': "leave",
+    'TrekkerVersus_clear1': "TrekkerVersus_clear1",
+    'TrekkerVersus_clear2': "TrekkerVersus_clear2",
+    'TrekkerVersus_clear3': "TrekkerVersus_clear3",
+    'TrekkerVersus_clear4': "TrekkerVersus_clear4",
+    'TrekkerVersus_clear5': "TrekkerVersus_clear5",
+    'TrekkerVersus_defeat': "TrekkerVersus_defeat",
+    'TrekkerVersus_difficulty1': "TrekkerVersus_difficulty1",
+    'TrekkerVersus_difficulty2': "TrekkerVersus_difficulty2",
+    'TrekkerVersus_difficulty3': "TrekkerVersus_difficulty3",
+    'TrekkerVersus_difficulty4': "TrekkerVersus_difficulty4",
+    'TrekkerVersus_difficulty5': "TrekkerVersus_difficulty5",
+    'TrekkerVersus_fail': "TrekkerVersus_fail",
+    'TrekkerVersus_largeG': "TrekkerVersus_largeG",
+    'TrekkerVersus_normalG': "TrekkerVersus_normalG",
+    'TrekkerVersus_smallG': "TrekkerVersus_smallG",
+    'TrekkerVersus_victory': "TrekkerVersus_victory",
 }
 
 
