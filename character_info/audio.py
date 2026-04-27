@@ -115,6 +115,15 @@ npc_voice_title_mapping = {
     'TrekkerVersus_victory': "TrekkerVersus_victory",
 }
 
+star_tower_type_mapping = {
+    'event_lv1': 'event_lv1',
+    'event_lv2': 'event_lv2',
+    'event_lv3': 'event_lv3',
+    'chat_lv1': 'chat_lv1',
+    'chat_lv2': 'chat_lv2',
+    'chat_lv3': 'chat_lv3',
+}
+
 
 def append_vo_directory_data(result: dict[int, list[AudioLine]]):
     existing_sources: set[str] = set()
@@ -280,6 +289,52 @@ def get_npc_id_to_name() -> dict[int, str]:
 
 
 @cache
+def get_star_tower_transcriptions() -> dict[str, tuple[str, str, str]]:
+    jp_bin = load_json_from_path(jp_root / "bin/StarTowerTalk.json")
+    jp_lang = load_json_from_path(jp_root / "language/ja_JP/StarTowerTalk.json")
+    cn_bin = load_json_from_path(cn_root / "bin/StarTowerTalk.json")
+    cn_lang = load_json_from_path(cn_root / "language/zh_CN/StarTowerTalk.json")
+    en_data = autoload("StarTowerTalk")
+    result = {}
+    for k, v in en_data.items():
+        source = v['Voice']
+        jp_text = string_postprocessor(jp_lang.get(jp_bin[k]['Content'], jp_bin[k]['Content']).replace('\r', ''))
+        cn_text = string_postprocessor(cn_lang.get(cn_bin[k]['Content'], cn_bin[k]['Content']).replace('\r', ''))
+        result[source] = (jp_text, cn_text, v['Content'])
+    return result
+
+
+def append_star_tower_data(result: dict[str, list[AudioLine]]):
+    npc_id_to_name = get_npc_id_to_name()
+    transcriptions = get_star_tower_transcriptions()
+    en_data = autoload("StarTowerTalk")
+    for k, v in en_data.items():
+        source = v['Voice']
+        npc_id = v['NPCId']
+        if npc_id not in npc_id_to_name:
+            continue
+        npc_name = npc_id_to_name[npc_id]
+        if npc_name not in result:
+            continue
+        parts = source.split('_')
+        type_key = f"{parts[2]}_{parts[3]}"
+        if type_key not in star_tower_type_mapping:
+            print(f"Audio: unknown StarTowerTalk type {type_key!r} in {source}")
+            continue
+        jp_text, cn_text, en_text = transcriptions[source]
+        result[npc_name].append(AudioLine(
+            id=v['Id'],
+            title=star_tower_type_mapping[type_key],
+            source=source,
+            transcription_jp=jp_text,
+            transcription_cn=cn_text,
+            translation=en_text,
+            voice_type=1,
+            sort_key=v['Id'],
+        ))
+
+
+@cache
 def get_npc_audio() -> dict[str, list[AudioLine]]:
     npc_id_to_name = get_npc_id_to_name()
     result: dict[str, list[AudioLine]] = {name: [] for name in npc_id_to_name.values()}
@@ -311,6 +366,7 @@ def get_npc_audio() -> dict[str, list[AudioLine]]:
             voice_type=1,
             sort_key=sort_key,
         ))
+    append_star_tower_data(result)
     return {name: sorted(lines, key=lambda l: l.sort_key)
             for name, lines in result.items() if lines}
 
