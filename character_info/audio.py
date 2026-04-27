@@ -285,6 +285,11 @@ def get_npc_id_to_name() -> dict[int, str]:
         npc_id = v['Id']
         if npc_id >= 9000:
             result[npc_id] = v['Name']
+    board_data = autoload("BoardNPC")
+    for v in board_data.values():
+        npc_id = v['Id']
+        if 9000 <= npc_id < 100000 and npc_id not in result:
+            result[npc_id] = v['Name']
     return result
 
 
@@ -394,6 +399,7 @@ def lines_to_template(lines: list[AudioLine]) -> str:
 
 def generate_audio_page():
     audio = get_audio()
+    npc_audio = get_npc_audio()
     for char, page in get_character_audio_pages().items():
         if not should_process_char_audio(char.name):
             continue
@@ -404,6 +410,10 @@ def generate_audio_page():
         lines_by_type = defaultdict(list)
         for line in lines:
             lines_by_type[line.voice_type].append(line)
+        if char.name in npc_audio:
+            npc_lines = npc_audio[char.name]
+            upload_audio_files(char.name, npc_lines)
+            lines_by_type[3].extend(npc_lines)
         result = ["{{TrekkerAudioTop}}",
                   "",
                   "==Daily Voice Chat==",
@@ -422,7 +432,10 @@ def generate_audio_page():
 def generate_npc_audio_page():
     audio = get_npc_audio()
     pages = get_npc_audio_pages()
+    char_names = set(get_characters().keys())
     for npc_name, page in pages.items():
+        if npc_name in char_names:
+            continue
         if npc_name not in audio:
             continue
         lines = audio[npc_name]
