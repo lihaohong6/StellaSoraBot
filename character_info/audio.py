@@ -359,7 +359,8 @@ def get_npc_audio() -> dict[str, list[AudioLine]]:
         result[npc_name].append(AudioLine(
             id=int(k),
             title=npc_voice_title_mapping[votype],
-            source=source,
+            # Fix missing vo_npc173_twin_greet_002_EX
+            source=source.replace("_EX", ""),
             transcription_jp=tr_jp,
             transcription_cn=tr_cn,
             translation=translation,
