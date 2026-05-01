@@ -1,18 +1,21 @@
 import re
+import shutil
 import subprocess
 from collections import defaultdict
 from dataclasses import dataclass
 from functools import cache
 from itertools import groupby
 from pathlib import Path
+from typing import Any
 
-from pywikibot import Page
+from pywikibot import FilePage, Page
 from pywikibot.pagegenerators import PreloadingGenerator
 from wikitextparser import Template
 
 from character_info.characters import Character, get_characters, get_character_pages
+from utils.audio_utils import compute_audio_distance
 from utils.data_utils import autoload, load_json_from_path, en_root, jp_root, audio_wav_root, temp_dir, cn_root, string_postprocessor
-from utils.upload_utils import UploadRequest, process_uploads
+from utils.upload_utils import UploadRequest, process_uploads, upload_file
 from utils.wiki_utils import save_page, s
 
 
@@ -266,11 +269,33 @@ def upload_audio_files(char_name: str, audio_lines: list[AudioLine]) -> None:
             target_page = audio_line.file_page(lang)
             upload_requests.append(UploadRequest(
                 source=ogg_file,
-                target=target_page,
+                target=FilePage(s, target_page),
                 text=f"[[Category:{char_name} voice lines]]",
                 summary="upload voice lines"
             ))
     process_uploads(upload_requests, force=True)
+    # Note: extremely expensive operation; uncomment only when needed.
+    # check_file_diff(upload_requests)
+
+
+def check_file_diff(upload_requests: list[UploadRequest]):
+    wiki_cache_dir = audio_wav_root / 'wiki_cache'
+    wiki_cache_dir.mkdir(parents=True, exist_ok=True)
+    for r in upload_requests:
+        file_page: FilePage
+        ogg_file, file_page = r.source, r.target
+        wiki_cache_file = wiki_cache_dir / ogg_file.name
+        if not wiki_cache_file.exists():
+            file_page.download(filename=wiki_cache_file)
+        try:
+            distance = compute_audio_distance(wiki_cache_file, ogg_file)
+            if distance > 1:
+                print(f"For file {ogg_file.name}: {distance}")
+                upload_file(file_page.text, file_page, "upload voice lines", file=ogg_file, force=True)
+                wiki_cache_file.unlink()
+                shutil.copy2(ogg_file, wiki_cache_file)
+        except Exception:
+            pass
 
 
 def get_character_audio_pages() -> dict[Character, Page]:

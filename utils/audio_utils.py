@@ -2,6 +2,11 @@ import subprocess
 from functools import cache
 from pathlib import Path
 
+import librosa
+import numpy as np
+from fastdtw import fastdtw
+from scipy.spatial.distance import euclidean
+
 from unpack.unpack_paths import vendor_library_dir
 
 
@@ -30,3 +35,16 @@ def get_wwiser_executable_path() -> Path:
     executable_path = wwiser_path / "wwiser.pyz"
     assert executable_path.exists()
     return executable_path
+
+
+def _extract_mfcc(path: Path, sr: int, n_mfcc: int) -> np.ndarray:
+    y, _ = librosa.load(path, sr=sr)
+    mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc)
+    # CMVN per coefficient
+    mfcc = (mfcc - mfcc.mean(axis=1, keepdims=True)) / (mfcc.std(axis=1, keepdims=True) + 1e-8)
+    return mfcc.T  # (n_frames, n_mfcc)
+
+def compute_audio_distance(p1: Path, p2: Path, sr: int = 22050, n_mfcc: int = 13) -> float:
+    m1, m2 = _extract_mfcc(p1, sr, n_mfcc), _extract_mfcc(p2, sr, n_mfcc)
+    distance, path = fastdtw(m1, m2, dist=euclidean)
+    return distance / len(path)  # symmetric, length-normalized
