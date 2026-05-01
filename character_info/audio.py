@@ -1,3 +1,4 @@
+import enum
 import re
 import shutil
 import subprocess
@@ -14,7 +15,8 @@ from wikitextparser import Template
 
 from character_info.characters import Character, get_characters, get_character_pages
 from utils.audio_utils import compute_audio_distance
-from utils.data_utils import autoload, load_json_from_path, en_root, jp_root, audio_wav_root, temp_dir, cn_root, string_postprocessor
+from utils.data_utils import autoload, load_json_from_path, en_root, jp_root, audio_wav_root, temp_dir, cn_root, \
+    string_postprocessor
 from utils.upload_utils import UploadRequest, process_uploads, upload_file
 from utils.wiki_utils import save_page, s
 
@@ -35,6 +37,11 @@ class AudioLine:
 
     def file_page(self, lang: str):
         return f"{self.file_name(lang)}.ogg"
+
+
+class VoiceType(enum.Enum):
+    STAR_TOWER = 10
+    SUMMIT_SHOW = 11
 
 
 @dataclass
@@ -359,9 +366,15 @@ def append_star_tower_data(result: dict[str, list[AudioLine]]):
             transcription_jp=jp_text,
             transcription_cn=cn_text,
             translation=en_text,
-            voice_type=1,
+            voice_type=VoiceType.STAR_TOWER.value,
             sort_key=v['Id'],
         ))
+
+
+def get_voice_type(title: str) -> int:
+    if title.startswith('TrekkerVersus'):
+        return VoiceType.SUMMIT_SHOW.value
+    return 1
 
 
 @cache
@@ -394,7 +407,7 @@ def get_npc_audio() -> dict[str, list[AudioLine]]:
             transcription_jp=tr_jp,
             transcription_cn=tr_cn,
             translation=translation,
-            voice_type=1,
+            voice_type=get_voice_type(votype),
             sort_key=sort_key,
         ))
     append_star_tower_data(result)
@@ -465,12 +478,30 @@ def generate_npc_audio_page():
             continue
         lines = audio[npc_name]
         upload_audio_files(npc_name, lines)
+
+        type_to_title = {
+            0: "Voice lines",
+            VoiceType.STAR_TOWER.value: "Ascension voice lines",
+            VoiceType.SUMMIT_SHOW.value: "Summit Show voice lines",
+        }
+
+        buckets: dict[int, list[AudioLine]] = defaultdict(list)
+        for line in lines:
+            if line.voice_type in type_to_title:
+                buckets[line.voice_type].append(line)
+            else:
+                buckets[0].append(line)
+
         result = ["{{TrekkerAudioTop}}",
-                  "",
-                  "==Voice Lines==",
-                  lines_to_template(lines),
-                  "",
-                  "{{TrekkerAudioBottom}}"]
+                  ""]
+        for k, v in type_to_title.items():
+            if len(buckets[k]) == 0:
+                continue
+            result.append(f"=={v}==")
+            result.append(lines_to_template(buckets[k]))
+        result.extend([
+            "",
+            "{{TrekkerAudioBottom}}"])
         save_page(page, "\n".join(result), summary="update NPC voice lines page")
 
 
