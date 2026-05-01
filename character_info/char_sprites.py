@@ -90,18 +90,7 @@ def retrieve_sprite_json_data(f: Path) -> SpriteData | None:
 
 
 chars_blacklist: set[str] = {
-    "Alpha Boar", "Aobelle", "Ash District Boy",
-    "Aspara", "Coco", "Cool Gang Lady", "Deepsea Finance Female Employee",
-    "Female Corp Clerk",
-    "Female Employee", "Female Flavio Resident", "Gang Girl",
-    "Generic Elderly Villager Female",
-    "Generic Loong Girl", "Generic Resident Female", "Generic Resident Male",
-    "Generic Trekker Female", "Generic Trekker Male", "Gold District Resident A",
-    "Gold District Resident B", "Gold District Resident C", "Grace Light Academy Student",
-    "Grace Receptionist", "Grandpa Chai", "Kieb",
-    "Loong Resident", "Male Flavio Resident", "Shrubshrew Grenadier",
-    "Shrubshrew Stake", "Shrubshrew Thug", "Student", "Trekker Soldier",
-    "Vita", "Wandering Birds Trekker", "White Cat Mercenary", "Witch", "Ya",
+    "Aobelle", "Aspara", "Kieb",
 }
 
 variant_blacklist: dict[str, set[str]] = {
