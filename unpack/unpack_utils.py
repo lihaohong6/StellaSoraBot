@@ -26,8 +26,8 @@ def for_each_object(f: Path, mapper: Callable[[ObjectReader, Environment], T]) -
 
 @cache
 def get_unity3d_files() -> list[Path]:
-    files: dict[str, Path] = dict((f.name, f) for f in unity_asset_dir_1.rglob("*.unity3d"))
-    for f in unity_asset_dir_2.rglob("*.unity3d"):
+    files: dict[str, Path] = dict((f.name, f) for f in unity_asset_dir_2.rglob("*.unity3d"))
+    for f in unity_asset_dir_1.rglob("*.unity3d"):
         if f.name not in files:
             files[f.name] = f
     return list(files.values())

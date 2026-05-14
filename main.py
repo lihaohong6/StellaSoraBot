@@ -36,7 +36,7 @@ def update_character_page():
 def main():
     subprocess.run(["git", "pull"], check=True, cwd=Path("./vendor/StellaSoraData"))
     autoload_all_files()
-    export_all_assets()
+    # export_all_assets()
     update_character_page()
     cg_uploader_main()
     update_disc_all()

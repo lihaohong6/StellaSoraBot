@@ -94,10 +94,8 @@ chars_blacklist: set[str] = {
 }
 
 variant_blacklist: dict[str, set[str]] = {
-    "Cosette": {"c"},
     "Female tyrant": {"ac", "ad", "p", "q", "s", "t", "u", "v", "w", "x", "y", "z"},
     "Male tyrant": {"ac", "ad", "p", "q", "s", "t", "u", "v", "w", "x", "y", "z"},
-    "Shimiao": {"b"},
 }
 
 
@@ -184,7 +182,7 @@ def export_sprites() -> dict[str, dict[str, list[Sprite]]]:
     root2 = assets_root / "actor2d/character"
     assert root2.exists()
     for char_name, char in get_characters().items():
-        for dir_suffix, variant_name in [('02', 'awakened'), ('03', 'skin1')]:
+        for dir_suffix, variant_name in [('02', 'awakened'), ('03', 'skin1'), ('04', 'skin2')]:
             char_dir = root2 / f'{char.id}{dir_suffix}' / 'atlas_png' / 'a'
             if not char_dir.exists():
                 continue
@@ -298,6 +296,11 @@ def create_gallery_pages():
         templates = sprites_to_template(char.name, char_sprites, skip)
         if not page.exists():
             save_page(page, f"""{{{{GalleryTop}}}}
+==Images==
+
+====CGs==
+{{{{TrekkerCGs}}}}
+
 ==Sprites==
 {templates}
 {{{{GalleryBottom}}}}

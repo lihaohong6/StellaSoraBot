@@ -84,7 +84,7 @@ def make_item_pages(ids: list[int], content: str = "is an item.", overwrite: boo
             "[[Category:Item icons]]",
             "Batch upload item icons"))
     process_uploads(upload_requests)
-    process_page_creation_requests(page_save_requests, overwrite=True)
+    process_page_creation_requests(page_save_requests, overwrite=False)
 
 
 def main():
