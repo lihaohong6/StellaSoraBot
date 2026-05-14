@@ -14,6 +14,7 @@ from character_info.char_story import update_character_stories
 from character_info.private_message import update_private_messages
 from page_generators.cg_uploader import cg_uploader_main
 from page_generators.discs import update_disc_all
+from page_generators.purge_pages import purge_all_pages
 from unpack.unpack_main import export_all_assets
 from utils.data_utils import autoload_all_files
 
@@ -40,6 +41,7 @@ def main():
     update_character_page()
     cg_uploader_main()
     update_disc_all()
+    purge_all_pages()
 
 
 if __name__ == "__main__":
