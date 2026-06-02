@@ -298,7 +298,7 @@ def create_gallery_pages():
             save_page(page, f"""{{{{GalleryTop}}}}
 ==Images==
 
-====CGs==
+==CGs==
 {{{{TrekkerCGs}}}}
 
 ==Sprites==
