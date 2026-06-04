@@ -289,7 +289,9 @@ def _draw_node(
             height = max(1, round(layout.height))
             image = sprite.image.resize((width, height), Image.Resampling.LANCZOS)
             image = _tint(image, image_node.color)
-            canvas.alpha_composite(image, (round(layout.left), round(layout.top)))
+            _, max_alpha = image.split()[3].getextrema()
+            if max_alpha >= 200:
+                canvas.alpha_composite(image, (round(layout.left), round(layout.top)))
     for child_id in node.child_ids:
         if child_id not in rects:
             continue
