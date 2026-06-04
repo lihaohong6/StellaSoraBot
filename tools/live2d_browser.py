@@ -10,6 +10,7 @@ import socket
 import socketserver
 import threading
 import time
+import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
@@ -210,6 +211,15 @@ def _viewer_url(base_url: str, viewer_path: str) -> str:
     return f"{base_url.rstrip('/')}/{viewer_path.lstrip('/')}"
 
 
+def _with_query_param(url: str, name: str, value: str) -> str:
+    parsed = urllib.parse.urlsplit(url)
+    query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    query.append((name, value))
+    return urllib.parse.urlunsplit(
+        parsed._replace(query=urllib.parse.urlencode(query)),
+    )
+
+
 def _run(args: argparse.Namespace) -> None:
     width, height = args.viewport
     server_context: contextlib.AbstractContextManager[ServerInfo | None]
@@ -220,6 +230,8 @@ def _run(args: argparse.Namespace) -> None:
 
     with server_context as server:
         url = args.url or _viewer_url(server.url, args.viewer_path)
+        if args.mouse_tracking:
+            url = _with_query_param(url, "mouseTracking", "1")
         print(f"Opening {url}")
 
         browser = _launch_browser(args.headed)
@@ -265,6 +277,7 @@ def main() -> None:
     parser.add_argument("--model", help="Model option value, exact label, or label/path substring")
     parser.add_argument("--phase", help="Phase option value, exact label, or label substring, for example '3+' or 'idle_2'")
     parser.add_argument("--scale", type=float, help="Viewer scale slider value")
+    parser.add_argument("--mouse-tracking", action="store_true", help="Enable Live2D mouse focus tracking")
     parser.add_argument("--viewport", type=_parse_viewport, default=(1920, 1080), help="Viewport size, e.g. 1920x1080")
     parser.add_argument("--device-scale-factor", type=float, default=1, help="Browser device scale factor")
     parser.add_argument("--timeout", type=int, default=60000, help="Navigation and selector timeout in milliseconds")
