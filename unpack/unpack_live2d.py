@@ -18,6 +18,7 @@ from utils.data_utils import assets_root
 class Live2DVariant:
     name: str
     prefab_suffix: str
+    moc_suffix: str
     motion_group: str
     motion_list_name: str
 
@@ -37,10 +38,23 @@ class Live2DExportResult:
     skin_id: int
     variant: str
     output_dir: Path
+    moc_name: str | None = None
     moc_file: str | None = None
     texture_files: list[str] = field(default_factory=list)
     motions: list[Live2DMotion] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    skipped: bool = False
+    skip_reason: str | None = None
+
+
+@dataclass
+class Live2DModelCandidate:
+    component_id: int
+    game_object_id: int
+    moc_name: str
+    moc_bytes: bytes
+    texture_objects: list[tuple[int, ObjectReader]]
+    renderer_count: int
 
 
 @dataclass(frozen=True)
@@ -62,9 +76,9 @@ class Live2DReadError:
 
 
 VARIANTS = {
-    "base": Live2DVariant("base", "l", "Base", "Live2D.fadeMotionList"),
-    "full": Live2DVariant("full", "lf", "Full", "Live2D_Full.fadeMotionList"),
-    "talent": Live2DVariant("talent", "lt", "Talent", "Live2D_Talent.fadeMotionList"),
+    "base": Live2DVariant("base", "l", "L", "Base", "Live2D.fadeMotionList"),
+    "full": Live2DVariant("full", "lf", "F", "Full", "Live2D_Full.fadeMotionList"),
+    "talent": Live2DVariant("talent", "lt", "T", "Talent", "Live2D_Talent.fadeMotionList"),
 }
 
 DEFAULT_VARIANTS = set(VARIANTS)
@@ -230,6 +244,67 @@ def _descendant_game_objects(
     return result
 
 
+def _transform_for_game_object(
+    game_object_id: int,
+    objects: dict[int, ObjectReader],
+    source_bundle: Path,
+    read_errors: list[Live2DReadError],
+    context: str,
+) -> int | None:
+    game_object = objects.get(game_object_id)
+    if game_object is None:
+        return None
+    game_object_data = _read_typetree(game_object, source_bundle, read_errors, context)
+    if game_object_data is None:
+        return None
+    for component in game_object_data.get("m_Component") or []:
+        component_id = _component_path_id(component)
+        component_obj = objects.get(component_id)
+        if component_id is not None and component_obj is not None and component_obj.type == ClassIDType.Transform:
+            return component_id
+    return None
+
+
+def _descendant_game_objects_from_id(
+    root_game_object_id: int,
+    objects: dict[int, ObjectReader],
+    source_bundle: Path,
+    read_errors: list[Live2DReadError],
+) -> list[int]:
+    root_transform_id = _transform_for_game_object(
+        root_game_object_id,
+        objects,
+        source_bundle,
+        read_errors,
+        "read CubismModel GameObject transform",
+    )
+    if root_transform_id is None:
+        return []
+
+    result: list[int] = []
+    seen_transforms: set[int] = set()
+    stack = [root_transform_id]
+    while stack:
+        transform_id = stack.pop()
+        if transform_id in seen_transforms:
+            continue
+        seen_transforms.add(transform_id)
+        transform_obj = objects.get(transform_id)
+        if transform_obj is None:
+            continue
+        transform = _read_typetree(transform_obj, source_bundle, read_errors, "read CubismModel transform hierarchy")
+        if transform is None:
+            continue
+        game_object_id = _path_id(transform.get("m_GameObject"))
+        if game_object_id is not None:
+            result.append(game_object_id)
+        for child in transform.get("m_Children") or []:
+            child_id = _path_id(child)
+            if child_id is not None:
+                stack.append(child_id)
+    return result
+
+
 def _components_for_game_objects(
     game_object_ids: list[int],
     objects: dict[int, ObjectReader],
@@ -257,6 +332,18 @@ def _components_for_game_objects(
     return components
 
 
+def _components_by_game_object(
+    components: list[tuple[int, str | None, dict[str, Any]]],
+) -> dict[int, list[tuple[int, str | None, dict[str, Any]]]]:
+    result: dict[int, list[tuple[int, str | None, dict[str, Any]]]] = {}
+    for component in components:
+        game_object_id = _path_id(component[2].get("m_GameObject"))
+        if game_object_id is None:
+            continue
+        result.setdefault(game_object_id, []).append(component)
+    return result
+
+
 def _texture_sort_key(item: tuple[int, str]) -> tuple[str, int, str]:
     _, name = item
     match = TEXTURE_NAME_RE.match(name)
@@ -282,21 +369,134 @@ def _collect_textures(
     return [(path_id, objects[path_id]) for path_id, _ in sorted(texture_ids.items(), key=_texture_sort_key)]
 
 
+def _moc_base_name(skin_id: int, variant: Live2DVariant) -> str:
+    return f"{skin_id}_{variant.moc_suffix}"
+
+
+def _moc_split_suffix(moc_name: str, skin_id: int, variant: Live2DVariant) -> str | None:
+    base_name = _moc_base_name(skin_id, variant)
+    match = re.fullmatch(rf"{re.escape(base_name)}_([a-z])", moc_name)
+    if match is None:
+        return None
+    return match.group(1)
+
+
+def _candidate_components(
+    game_object_ids: list[int],
+    components_by_game_object: dict[int, list[tuple[int, str | None, dict[str, Any]]]],
+) -> list[tuple[int, str | None, dict[str, Any]]]:
+    result: list[tuple[int, str | None, dict[str, Any]]] = []
+    for game_object_id in game_object_ids:
+        result.extend(components_by_game_object.get(game_object_id) or [])
+    return result
+
+
+def _model_candidates(
+    skin_id: int,
+    variant: Live2DVariant,
+    components: list[tuple[int, str | None, dict[str, Any]]],
+    objects: dict[int, ObjectReader],
+    source_bundle: Path,
+    read_errors: list[Live2DReadError],
+    result: Live2DExportResult,
+) -> list[Live2DModelCandidate]:
+    candidates: list[Live2DModelCandidate] = []
+    components_by_game_object = _components_by_game_object(components)
+    for component_id, script, data in components:
+        if script != "CubismModel":
+            continue
+        game_object_id = _path_id(data.get("m_GameObject"))
+        if game_object_id is None:
+            result.warnings.append(f"CubismModel component {component_id} has no GameObject.")
+            continue
+        moc_id = _path_id(data.get("_moc"))
+        moc_obj = objects.get(moc_id)
+        if moc_id is None or moc_obj is None:
+            result.warnings.append(f"CubismModel component {component_id} has no readable CubismMoc reference.")
+            continue
+        moc_data = _read_typetree(moc_obj, source_bundle, read_errors, "read CubismMoc")
+        if moc_data is None:
+            result.warnings.append(f"CubismMoc reference for component {component_id} could not be read.")
+            continue
+        moc_name = moc_data.get("m_Name") or _moc_base_name(skin_id, variant)
+        moc_bytes = bytes(moc_data.get("_bytes") or [])
+        if not moc_bytes.startswith(b"MOC3"):
+            result.warnings.append(f"CubismMoc {moc_name} bytes do not start with MOC3.")
+            continue
+        descendant_ids = _descendant_game_objects_from_id(game_object_id, objects, source_bundle, read_errors)
+        if not descendant_ids:
+            result.warnings.append(f"CubismModel {moc_name} has no readable descendant hierarchy.")
+            continue
+        scoped_components = _candidate_components(descendant_ids, components_by_game_object)
+        texture_objects = _collect_textures(scoped_components, objects)
+        if not texture_objects:
+            result.warnings.append(f"CubismModel {moc_name} has no readable textures.")
+            continue
+        renderer_count = sum(1 for _, scoped_script, _ in scoped_components if scoped_script == "CubismRenderer")
+        candidates.append(Live2DModelCandidate(
+            component_id=component_id,
+            game_object_id=game_object_id,
+            moc_name=moc_name,
+            moc_bytes=moc_bytes,
+            texture_objects=texture_objects,
+            renderer_count=renderer_count,
+        ))
+    return candidates
+
+
+def _select_model_candidate(
+    skin_id: int,
+    variant: Live2DVariant,
+    candidates: list[Live2DModelCandidate],
+) -> Live2DModelCandidate | None:
+    if not candidates:
+        return None
+    split_a = [
+        candidate
+        for candidate in candidates
+        if _moc_split_suffix(candidate.moc_name, skin_id, variant) == "a"
+    ]
+    if split_a:
+        return max(split_a, key=lambda candidate: candidate.renderer_count)
+
+    exact_name = _moc_base_name(skin_id, variant)
+    exact = [candidate for candidate in candidates if candidate.moc_name == exact_name]
+    if exact:
+        return max(exact, key=lambda candidate: candidate.renderer_count)
+
+    return max(candidates, key=lambda candidate: (candidate.renderer_count, candidate.moc_name))
+
+
+def _motion_list_names(variant: Live2DVariant, moc_name: str, skin_id: int) -> list[str]:
+    names: list[str] = []
+    split_suffix = _moc_split_suffix(moc_name, skin_id, variant)
+    if split_suffix is not None:
+        names.append(f"{split_suffix}.fadeMotionList")
+    names.append(variant.motion_list_name)
+    return list(dict.fromkeys(names))
+
+
 def _find_motion_list(
     objects: dict[int, ObjectReader],
     scripts: dict[int, str],
-    motion_list_name: str,
+    motion_list_names: list[str],
     source_bundle: Path,
     read_errors: list[Live2DReadError],
-) -> dict[str, Any] | None:
+) -> tuple[str, dict[str, Any]] | None:
+    requested_names = set(motion_list_names)
+    matches: dict[str, dict[str, Any]] = {}
     for obj in objects.values():
         if obj.type != ClassIDType.MonoBehaviour:
             continue
         data = _read_typetree(obj, source_bundle, read_errors, "read motion list candidate")
         if data is None:
             continue
-        if _script_name(data, scripts) == "CubismFadeMotionList" and data.get("m_Name") == motion_list_name:
-            return data
+        name = data.get("m_Name")
+        if _script_name(data, scripts) == "CubismFadeMotionList" and name in requested_names:
+            matches.setdefault(name, data)
+    for name in motion_list_names:
+        if name in matches:
+            return name, matches[name]
     return None
 
 
@@ -439,14 +639,27 @@ def _model_json(moc_file: str, texture_files: list[str], variant: Live2DVariant,
     }
 
 
-def _manifest(result: Live2DExportResult, source_bundle: Path, prefab_container: str, moc_name: str) -> dict[str, Any]:
+def _model_file_name(skin_id: int, variant: Live2DVariant) -> str:
+    return f"{skin_id}_{variant.name}.model3.json"
+
+
+def _remove_stale_model_json(out_dir: Path, skin_id: int, variant: Live2DVariant) -> None:
+    model_path = out_dir / _model_file_name(skin_id, variant)
+    if model_path.exists():
+        model_path.unlink()
+        print(f"Removed stale skipped model {model_path}")
+
+
+def _manifest(result: Live2DExportResult, source_bundle: Path, prefab_container: str) -> dict[str, Any]:
     return {
         "skin_id": result.skin_id,
         "variant": result.variant,
+        "skipped": result.skipped,
+        "skip_reason": result.skip_reason,
         "source_bundle": str(source_bundle),
         "prefab": prefab_container,
         "moc": {
-            "name": moc_name,
+            "name": result.moc_name,
             "file": result.moc_file,
         },
         "textures": result.texture_files,
@@ -463,6 +676,21 @@ def _manifest(result: Live2DExportResult, source_bundle: Path, prefab_container:
         ],
         "warnings": result.warnings,
     }
+
+
+def _skip_variant(
+    result: Live2DExportResult,
+    variant: Live2DVariant,
+    source_bundle: Path,
+    prefab_container: str,
+    reason: str,
+) -> Live2DExportResult:
+    result.skipped = True
+    result.skip_reason = reason
+    result.warnings.append(reason)
+    _remove_stale_model_json(result.output_dir, result.skin_id, variant)
+    _write_json(result.output_dir / "stella_live2d_manifest.json", _manifest(result, source_bundle, prefab_container))
+    return result
 
 
 def _export_variant(
@@ -482,31 +710,35 @@ def _export_variant(
     components = _components_for_game_objects(game_object_ids, objects, scripts, source_bundle, read_errors)
     if len(read_errors) > error_count:
         result.warnings.append(f"Skipped {len(read_errors) - error_count} unreadable prefab objects.")
-    cubism_models = [data for _, script, data in components if script == "CubismModel"]
-    if not cubism_models:
-        result.warnings.append("No CubismModel component found in prefab hierarchy.")
-        return result
-    if len(cubism_models) > 1:
-        result.warnings.append(f"Found {len(cubism_models)} CubismModel components; using the first.")
+    candidates = _model_candidates(skin_id, variant, components, objects, source_bundle, read_errors, result)
+    if not candidates:
+        return _skip_variant(
+            result,
+            variant,
+            source_bundle,
+            prefab_root.container or "",
+            "No valid CubismModel candidate found in prefab hierarchy.",
+        )
+    candidate = _select_model_candidate(skin_id, variant, candidates)
+    if candidate is None:
+        return _skip_variant(
+            result,
+            variant,
+            source_bundle,
+            prefab_root.container or "",
+            "No CubismModel candidate could be selected.",
+        )
+    if len(candidates) > 1:
+        candidate_names = ", ".join(candidate.moc_name for candidate in candidates)
+        result.warnings.append(
+            f"Found {len(candidates)} CubismModel candidates ({candidate_names}); selected {candidate.moc_name}."
+        )
 
-    moc_id = _path_id(cubism_models[0].get("_moc"))
-    moc_obj = objects.get(moc_id)
-    if moc_id is None or moc_obj is None:
-        result.warnings.append("CubismModel has no readable CubismMoc reference.")
-        return result
+    result.moc_name = candidate.moc_name
+    result.moc_file = f"{_safe_json_name(candidate.moc_name)}.moc3"
+    _write_bytes(out_dir / result.moc_file, candidate.moc_bytes)
 
-    moc_data = _read_typetree(moc_obj, source_bundle, read_errors, "read CubismMoc")
-    if moc_data is None:
-        result.warnings.append("CubismMoc reference could not be read.")
-        return result
-    moc_name = moc_data.get("m_Name") or f"{skin_id}_{variant.prefab_suffix.upper()}"
-    moc_bytes = bytes(moc_data.get("_bytes") or [])
-    if not moc_bytes.startswith(b"MOC3"):
-        result.warnings.append("CubismMoc bytes do not start with MOC3.")
-    result.moc_file = f"{_safe_json_name(moc_name)}.moc3"
-    _write_bytes(out_dir / result.moc_file, moc_bytes)
-
-    for index, (_, texture_obj) in enumerate(_collect_textures(components, objects)):
+    for index, (_, texture_obj) in enumerate(candidate.texture_objects):
         texture_name = texture_obj.read().m_Name
         file_name = f"{_safe_json_name(texture_name)}.png"
         texture_file = f"textures/{file_name}"
@@ -516,26 +748,28 @@ def _export_variant(
             result.warnings.append(f"Duplicate texture filename generated for {texture_name}.")
 
     error_count = len(read_errors)
-    motion_list = _find_motion_list(objects, scripts, variant.motion_list_name, source_bundle, read_errors)
+    requested_motion_lists = _motion_list_names(variant, candidate.moc_name, skin_id)
+    motion_list = _find_motion_list(objects, scripts, requested_motion_lists, source_bundle, read_errors)
     if len(read_errors) > error_count:
         result.warnings.append(f"Skipped {len(read_errors) - error_count} unreadable motion list candidates.")
     if motion_list is None:
-        result.warnings.append(f"No {variant.motion_list_name} found.")
+        result.warnings.append(f"No motion list found; tried {', '.join(requested_motion_lists)}.")
     else:
+        motion_list_name, motion_list_data = motion_list
+        if motion_list_name != variant.motion_list_name:
+            result.warnings.append(f"Using {motion_list_name} for {candidate.moc_name}.")
         error_count = len(read_errors)
-        result.motions = _export_motion_data(motion_list, objects, out_dir, source_bundle, read_errors)
+        result.motions = _export_motion_data(motion_list_data, objects, out_dir, source_bundle, read_errors)
         if len(read_errors) > error_count:
             result.warnings.append(f"Skipped {len(read_errors) - error_count} unreadable motion objects.")
 
-    if result.moc_file:
-        model_file = f"{skin_id}_{variant.name}.model3.json"
-        _write_json(out_dir / model_file, _model_json(result.moc_file, result.texture_files, variant, result.motions))
-    _write_json(out_dir / "stella_live2d_manifest.json", _manifest(
-        result,
-        source_bundle,
-        prefab_root.container or "",
-        moc_name,
+    _write_json(out_dir / _model_file_name(skin_id, variant), _model_json(
+        result.moc_file,
+        result.texture_files,
+        variant,
+        result.motions,
     ))
+    _write_json(out_dir / "stella_live2d_manifest.json", _manifest(result, source_bundle, prefab_root.container or ""))
     return result
 
 
