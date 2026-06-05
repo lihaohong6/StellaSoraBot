@@ -74,6 +74,16 @@ class TalentModel:
         return f"{self.skin_id}.png"
 
 
+@dataclass(frozen=True)
+class ScreenshotResult:
+    skin_id: str
+    model_path: Path
+    output_path: Path
+    skipped: bool
+    image_width: int | None = None
+    image_height: int | None = None
+
+
 def _discover_talent_models(skin_ids: set[str] | None) -> list[TalentModel]:
     models = []
     for model_path in sorted(CHARACTER_ROOT.glob("*/live2d/talent/*.model3.json")):
@@ -82,6 +92,10 @@ def _discover_talent_models(skin_ids: set[str] | None) -> list[TalentModel]:
             continue
         models.append(TalentModel(skin_id=skin_id, model_path=model_path))
     return models
+
+
+def discover_talent_models(skin_ids: set[str] | None = None) -> list[TalentModel]:
+    return _discover_talent_models(skin_ids)
 
 
 def _png_size(path: Path) -> tuple[int, int]:
@@ -313,69 +327,111 @@ def _capture_model(
     )
 
 
-def _run(args: argparse.Namespace) -> None:
-    if args.min_size < MIN_OUTPUT_SIZE:
+def capture_talent_screenshots(
+    *,
+    root: Path = REPO_ROOT,
+    host: str = "127.0.0.1",
+    port: int = 0,
+    viewer_path: str = DEFAULT_VIEWER_PATH,
+    output_root: Path = DEFAULT_OUTPUT_ROOT,
+    skin_ids: list[str] | set[str] | None = None,
+    limit: int | None = None,
+    scale: float = DEFAULT_SCALE,
+    viewport: tuple[int, int] = DEFAULT_VIEWPORT,
+    fit_margin: float = DEFAULT_FIT_MARGIN,
+    min_size: int = MIN_OUTPUT_SIZE,
+    alpha_threshold: int = 0,
+    crop_padding: int = 16,
+    max_fit_attempts: int = MAX_FIT_ATTEMPTS,
+    device_scale_factor: float = 1,
+    timeout: int = 60000,
+    settle: int = 1500,
+    headed: bool = False,
+) -> list[ScreenshotResult]:
+    if min_size < MIN_OUTPUT_SIZE:
         raise ValueError(f"--min-size must be at least {MIN_OUTPUT_SIZE}")
-    if not 0 < args.fit_margin <= 1:
+    if not 0 < fit_margin <= 1:
         raise ValueError("--fit-margin must be greater than 0 and no more than 1")
-    if not 0 <= args.alpha_threshold <= 255:
+    if not 0 <= alpha_threshold <= 255:
         raise ValueError("--alpha-threshold must be between 0 and 255")
-    if args.crop_padding < 0:
+    if crop_padding < 0:
         raise ValueError("--crop-padding must be non-negative")
-    if args.max_fit_attempts < 0:
+    if max_fit_attempts < 0:
         raise ValueError("--max-fit-attempts must be non-negative")
 
-    models = _discover_talent_models(set(args.skin_id) if args.skin_id else None)
-    if args.limit is not None:
-        models = models[: args.limit]
+    models = _discover_talent_models(set(skin_ids) if skin_ids else None)
+    if limit is not None:
+        models = models[:limit]
     if not models:
         raise RuntimeError("No talent Live2D models were found")
 
-    output_root = args.output_root.resolve()
-    width, height = args.viewport
-    if width < args.min_size or height < args.min_size:
-        raise ValueError(f"Viewport must be at least {args.min_size}x{args.min_size}")
+    output_root = output_root.resolve()
+    width, height = viewport
+    if width < min_size or height < min_size:
+        raise ValueError(f"Viewport must be at least {min_size}x{min_size}")
 
     print(f"Found {len(models)} talent Live2D models")
+    pending: list[tuple[int, TalentModel, Path]] = []
     failures: list[tuple[TalentModel, str]] = []
+    results: list[ScreenshotResult] = []
 
-    with _static_server(args.root, args.host, args.port) as server:
-        browser = _launch_browser(args.headed)
+    for index, model in enumerate(models, start=1):
+        output = output_root / model.output_name
+        if output.exists():
+            print(f"[{index}/{len(models)}] Skipping {model.skin_id}: {output}")
+            results.append(ScreenshotResult(
+                skin_id=model.skin_id,
+                model_path=model.model_path,
+                output_path=output,
+                skipped=True,
+            ))
+            continue
+        pending.append((index, model, output))
+
+    if not pending:
+        print(f"Wrote screenshots to {output_root}")
+        return results
+
+    with _static_server(root, host, port) as server:
+        browser = _launch_browser(headed)
         try:
             context = browser.new_context(
                 viewport={"width": width, "height": height},
-                device_scale_factor=args.device_scale_factor,
+                device_scale_factor=device_scale_factor,
             )
             page = context.new_page()
 
-            for index, model in enumerate(models, start=1):
-                output = output_root / model.output_name
-                if args.skip_existing and output.exists():
-                    print(f"[{index}/{len(models)}] Skipping {model.skin_id}: {output}")
-                    continue
-
+            for index, model, output in pending:
                 print(f"[{index}/{len(models)}] Capturing {model.skin_id}: {output}")
                 try:
                     image_width, image_height = _capture_model(
                         page=page,
                         server=server,
-                        viewer_path=args.viewer_path,
+                        viewer_path=viewer_path,
                         model=model,
                         output=output,
-                        scale=args.scale,
-                        timeout_ms=args.timeout,
-                        settle_ms=args.settle,
-                        alpha_threshold=args.alpha_threshold,
-                        crop_padding=args.crop_padding,
-                        fit_margin=args.fit_margin,
-                        min_size=args.min_size,
-                        max_fit_attempts=args.max_fit_attempts,
+                        scale=scale,
+                        timeout_ms=timeout,
+                        settle_ms=settle,
+                        alpha_threshold=alpha_threshold,
+                        crop_padding=crop_padding,
+                        fit_margin=fit_margin,
+                        min_size=min_size,
+                        max_fit_attempts=max_fit_attempts,
                     )
-                    if max(image_width, image_height) < args.min_size:
+                    if max(image_width, image_height) < min_size:
                         raise RuntimeError(
-                            f"Trimmed screenshot is {image_width}x{image_height}, below {args.min_size}px minimum",
+                            f"Trimmed screenshot is {image_width}x{image_height}, below {min_size}px minimum",
                         )
                     print(f"  wrote {image_width}x{image_height}")
+                    results.append(ScreenshotResult(
+                        skin_id=model.skin_id,
+                        model_path=model.model_path,
+                        output_path=output,
+                        skipped=False,
+                        image_width=image_width,
+                        image_height=image_height,
+                    ))
                 except Exception as error:
                     failures.append((model, str(error)))
                     print(f"  ERROR: {error}")
@@ -386,9 +442,36 @@ def _run(args: argparse.Namespace) -> None:
         print("\nLive2D screenshots with errors:")
         for model, error in failures:
             print(f"- {model.skin_id}: {model.viewer_path}: {error}")
-        raise SystemExit(1)
+        raise RuntimeError(f"Live2D screenshot capture failed for {len(failures)} model(s)")
 
     print(f"Wrote screenshots to {output_root}")
+    return results
+
+
+def _run(args: argparse.Namespace) -> None:
+    try:
+        capture_talent_screenshots(
+            root=args.root,
+            host=args.host,
+            port=args.port,
+            viewer_path=args.viewer_path,
+            output_root=args.output_root,
+            skin_ids=args.skin_id,
+            limit=args.limit,
+            scale=args.scale,
+            viewport=args.viewport,
+            fit_margin=args.fit_margin,
+            min_size=args.min_size,
+            alpha_threshold=args.alpha_threshold,
+            crop_padding=args.crop_padding,
+            max_fit_attempts=args.max_fit_attempts,
+            device_scale_factor=args.device_scale_factor,
+            timeout=args.timeout,
+            settle=args.settle,
+            headed=args.headed,
+        )
+    except RuntimeError as error:
+        raise SystemExit(str(error)) from None
 
 
 def main() -> None:
@@ -412,7 +495,6 @@ def main() -> None:
     parser.add_argument("--device-scale-factor", type=float, default=1, help="Browser device scale factor")
     parser.add_argument("--timeout", type=int, default=60000, help="Navigation and selector timeout in milliseconds")
     parser.add_argument("--settle", type=int, default=1500, help="Milliseconds to wait before screenshot")
-    parser.add_argument("--skip-existing", action="store_true", help="Do not recapture screenshots that already exist")
     parser.add_argument("--headed", action="store_true", help="Show the browser window")
     args = parser.parse_args()
 
