@@ -232,6 +232,8 @@ def _run(args: argparse.Namespace) -> None:
         url = args.url or _viewer_url(server.url, args.viewer_path)
         if args.mouse_tracking:
             url = _with_query_param(url, "mouseTracking", "1")
+        if args.render_resolution:
+            url = _with_query_param(url, "renderResolution", args.render_resolution)
         print(f"Opening {url}")
 
         browser = _launch_browser(args.headed)
@@ -277,6 +279,7 @@ def main() -> None:
     parser.add_argument("--model", help="Model option value, exact label, or label/path substring")
     parser.add_argument("--phase", help="Phase option value, exact label, or label substring, for example '3+' or 'idle_2'")
     parser.add_argument("--scale", type=float, help="Viewer scale slider value")
+    parser.add_argument("--render-resolution", help="Viewer render resolution: device, 1, 1.5, 2, 3, or 4")
     parser.add_argument("--mouse-tracking", action="store_true", help="Enable Live2D mouse focus tracking")
     parser.add_argument("--viewport", type=_parse_viewport, default=(1920, 1080), help="Viewport size, e.g. 1920x1080")
     parser.add_argument("--device-scale-factor", type=float, default=1, help="Browser device scale factor")
