@@ -1,5 +1,6 @@
 import json
 import re
+import shutil
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -71,6 +72,15 @@ def compose(base: Sprite, top: Sprite, out: Path) -> None:
 def process_assets(sprites: list[Sprite], char: Character, variant_name: str) -> None:
     assert sprites[0].number == 1
     base = sprites[0]
+    # Single sprite without variant
+    if len(sprites) == 1:
+        out = base.get_sprite_path(char.name, variant_name)
+        out.parent.mkdir(exist_ok=True, parents=True)
+        if not out.exists():
+            shutil.copy(base.source, out)
+            print(f"Saved: {out}")
+        base.combined = out
+        return
     for top in sprites[1:]:
         out = top.get_sprite_path(char.name, variant_name)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -227,12 +237,9 @@ def upload_sprites():
     for char_name, sprite_dict in sprites.items():
         json_data[char_name] = {}
         for variant_name, sprite_list in sprite_dict.items():
-            # FIXME: they should be uploaded as single images without stitching instead of discarded outright
-            if len(sprite_list) == 1:
-                continue
             json_data[char_name][variant_name] = []
             for sprite in sprite_list:
-                if sprite.number == 1:
+                if sprite.number == 1 and len(sprite_list) > 1:
                     continue
                 assert sprite.combined is not None
                 upload_requests.append(UploadRequest(
