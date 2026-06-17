@@ -2,6 +2,10 @@ version = 1
 revision = 3
 requires-python = "==3.13.*"
 
+[options]
+exclude-newer = "2026-06-14T04:21:02.534150004Z"
+exclude-newer-span = "P3D"
+
 [[package]]
 name = "archspec"
 version = "0.2.5"

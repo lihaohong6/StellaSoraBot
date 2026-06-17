@@ -1,10 +1,11 @@
 import re
 from dataclasses import dataclass
-from typing import Any, Optional, Dict, List
+from typing import Optional, Dict, List
 
 from story.parse_story import get_story_episodes, StoryEpisode, StoryRow
 from story.story_audio import get_bgm_path, get_sound_effect_path
 from utils.upload_utils import UploadRequest, process_uploads
+from utils.wiki_utils import save_page
 
 
 @dataclass
@@ -15,6 +16,12 @@ class StoryExport:
     description: str
     branches: Dict[str, str]
     main_content: str
+
+
+@dataclass
+class StoryPageExport:
+    page_title: str
+    episode_id: str
 
 
 def get_character_sprite_path(
@@ -184,6 +191,28 @@ def process_story_branches(episodes: Dict[str, StoryEpisode]) -> Dict[str, Story
     return exports
 
 
+def build_story_pages(
+    page_exports: list[StoryPageExport],
+    episodes: dict[str, StoryEpisode],
+) -> dict[str, str]:
+    pages: dict[str, str] = {}
+    for page_export in page_exports:
+        if page_export.episode_id not in episodes:
+            continue
+        pages[page_export.page_title] = episode_to_messenger_template(
+            episodes[page_export.episode_id]
+        )
+    return pages
+
+
+def save_story_pages(
+    pages: dict[str, str],
+    summary: str = "update story",
+) -> None:
+    for page_title, text in pages.items():
+        save_page(page_title, text, summary)
+
+
 def main():
     episodes = get_story_episodes()
     export_bgm_files(episodes)
@@ -214,7 +243,11 @@ def export_bgm_files(episodes: dict[str, StoryEpisode]):
     upload_requests = []
     for bgm in sorted(bgm_files):
         assert bgm.startswith("m")
-        path = get_bgm_path(bgm)
+        try:
+            path = get_bgm_path(bgm)
+        except KeyError:
+            print(f"WARNING: Could not find BGM asset for {bgm}")
+            continue
         upload_requests.append(UploadRequest(
             path,
             f"File:Bg{bgm}.ogg",

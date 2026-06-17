@@ -88,6 +88,21 @@ def process_text(text: str) -> str:
     return text
 
 
+def normalize_story_id(story_id: str) -> str:
+    return story_id.removesuffix(".lua").lower()
+
+
+def load_story_config(story_id: str) -> list[dict[str, Any]] | None:
+    return load_lua_table(f"game/ui/avg/_en/config/{normalize_story_id(story_id)}.lua")
+
+
+def parse_story_config(story_id: str) -> StoryEpisode | None:
+    data = load_story_config(story_id)
+    if data is None:
+        return None
+    return parse_story_episode(normalize_story_id(story_id), data)
+
+
 def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
     rows = []
     state = StoryState()
