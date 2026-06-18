@@ -2,6 +2,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional, Dict, List
 
+from character_info.char_sprite_face import sanitize_css_class
 from story.parse_story import get_story_episodes, StoryEpisode, StoryRow
 from story.story_audio import get_bgm_path, get_sound_effect_path
 from utils.upload_utils import UploadRequest, process_uploads
@@ -63,6 +64,7 @@ def story_row_to_messenger(
             message_parts = ["| message", f"| name :: {speaker_name}"]
             if image_path:
                 message_parts.append(f"| image :: {image_path}")
+                message_parts.append(f"| class :: {sanitize_css_class(speaker_name, variant)}")
             message_parts.extend([f"| text :: {text}", ""])
             result.extend(message_parts)
         else:
@@ -114,7 +116,7 @@ def story_row_to_messenger(
 
 
 def episode_to_messenger_template(episode: StoryEpisode) -> str:
-    result = ["{{Messenger"]
+    result = ["{{Messenger", "", "| config", "| image-default-width :: 300px", ""]
 
     if episode.title or episode.subtitle:
         episode_info = f"{episode.title}"

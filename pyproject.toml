@@ -15,3 +15,25 @@ dependencies = [
     "wikitextparser>=0.56.4",
     "xxhash>=3.6.0",
 ]
+
+[project.optional-dependencies]
+grounding = [
+    "torch",
+    "torchvision",
+    "transformers>=4.0.0,<5",
+    "addict",
+    "yapf",
+    "timm",
+    "numpy",
+    "supervision>=0.22.0",
+    "pycocotools",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128" }]
+torchvision = [{ index = "pytorch-cu128" }]
