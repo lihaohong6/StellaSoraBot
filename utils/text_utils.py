@@ -2,6 +2,7 @@ import re
 
 
 def escape_text(text: str) -> str:
+    text = re.subn(r"</?size(?:\s*=\s*[^>]*)?>", "", text)[0]
     text = (text
             .replace("==RT==", "\n")
             .replace("\n", "<br/>")

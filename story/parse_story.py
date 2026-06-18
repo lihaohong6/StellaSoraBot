@@ -117,9 +117,9 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
         params = row.get("param", [])
 
         if cmd == "SetIntro" and len(params) >= 5:
-            title = params[1]
-            subtitle = params[2]
-            description = params[3]
+            title = process_text(params[1])
+            subtitle = process_text(params[2])
+            description = process_text(params[3])
             break
 
     for row in data:

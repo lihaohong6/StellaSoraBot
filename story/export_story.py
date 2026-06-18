@@ -103,7 +103,7 @@ def story_row_to_messenger(
     if row.name == "sound_effect":
         se_file = row.attributes.get("file", "")
         if se_file:
-            result.extend(["| raw", f"| content :: {{{{Audio|{se_file}.ogg}}}}", ""])
+            result.extend(["| raw", f"| content :: {{{{Audio/se|{se_file}.ogg}}}}", ""])
         return result
 
     if row.name == "clear":
