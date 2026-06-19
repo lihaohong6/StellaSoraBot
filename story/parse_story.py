@@ -208,15 +208,10 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
 
         def set_audio():
             audio_file = params[1]
-
-            rows.append(
-                StoryRow(
-                    "sound_effect",
-                    {
-                        "file": audio_file,
-                    },
-                )
-            )
+            if rows and rows[-1].name == "sound_effect":
+                rows[-1].attributes["files"] += f",{audio_file}"
+            else:
+                rows.append(StoryRow("sound_effect", {"files": audio_file}))
 
         def set_char():
             # Character positioning and sprite changes

@@ -119,9 +119,13 @@ def story_row_to_messenger(
         return result
 
     if row.name == "sound_effect":
-        se_file = row.attributes.get("file", "")
-        if se_file and "stop" not in se_file:
-            result.extend(["| raw", f"| content :: {{{{Audio/se|{se_file}.ogg}}}}", ""])
+        all_files = row.attributes.get("files", "")
+        templates = []
+        for se_file in all_files.split(","):
+            if se_file and "stop" not in se_file:
+                templates.append(f"{{{{Audio/se|{se_file}.ogg}}}}")
+        if templates:
+            result.extend(["| raw", f"| content :: {' '.join(templates)}", ""])
         return result
 
     if row.name == "clear":
@@ -280,9 +284,9 @@ def export_sound_effects(episodes: dict[str, StoryEpisode]):
     for episode in episodes.values():
         for row in episode.rows:
             if row.name == "sound_effect":
-                se_file = row.attributes.get("file", "")
-                if se_file:
-                    sound_effects.add(se_file)
+                for se_file in row.attributes.get("files", "").split(","):
+                    if se_file:
+                        sound_effects.add(se_file)
     upload_requests = []
     for se in sorted(sound_effects):
         if not se.startswith("se"):
