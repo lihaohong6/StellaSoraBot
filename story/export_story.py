@@ -1,12 +1,19 @@
 import re
 from dataclasses import dataclass
+from functools import cache
 from typing import Optional, Dict, List
 
 from character_info.char_sprite_face import sanitize_css_class
 from story.parse_story import get_story_episodes, StoryEpisode, StoryRow
 from story.story_audio import get_bgm_path, get_sound_effect_path
+from utils.data_utils import assets_root
 from utils.upload_utils import UploadRequest, process_uploads
 from utils.wiki_utils import save_page
+
+
+@cache
+def _get_avgbg_names() -> frozenset[str]:
+    return frozenset(f.stem for f in (assets_root / "imageavg" / "avgbg").glob("*.png"))
 
 
 @dataclass
@@ -89,8 +96,12 @@ def story_row_to_messenger(
     if row.name == "background":
         bg_image = row.attributes.get("image", "")
         if bg_image and bg_image != "bg_black":
-            if not bg_image.startswith("story"):
+            if bg_image.startswith("story"):
+                pass
+            elif bg_image in _get_avgbg_names():
                 bg_image = f"BG_{bg_image}"
+            else:
+                return result
             result.extend(
                 ["| raw", f"| content :: {{{{Story/background | {bg_image}}}}}", ""]
             )
