@@ -38,6 +38,9 @@ class ChoiceContext:
     option: Optional[str] = None
 
 
+PROTAGONIST_CHARACTER_IDS = frozenset({"avg3_100"})
+
+
 def get_character_sprite_path(
     char_name: str, variant: str = "a", expression: str = "00"
 ) -> str:
@@ -84,11 +87,11 @@ def story_row_to_messenger(
         text = row.attributes.get("text", "")
         variant = row.attributes.get("variant", "a")
         expression = row.attributes.get("expression", "00")
-        is_reply = row.attributes.get("is_reply") == "true"
-
-        if is_reply:
-            result.extend(["| reply", f"| text :: {text}", ""])
-            return _append_group_option(result, group, option)
+        character_id = row.attributes.get("character_id", "")
+        is_reply = (
+            row.attributes.get("is_reply") == "true"
+            or character_id in PROTAGONIST_CHARACTER_IDS
+        )
 
         speaker_name = character_id_to_speaker_name(speaker)
 
@@ -96,6 +99,15 @@ def story_row_to_messenger(
         image_path = None
         if expression != "00":
             image_path = get_character_sprite_path(speaker_name, variant, expression)
+
+        if is_reply:
+            reply_parts = ["| reply"]
+            if image_path:
+                reply_parts.append(f"| image :: {image_path}")
+                reply_parts.append(f"| class :: {sanitize_css_class(speaker_name, variant)}")
+            reply_parts.extend([f"| text :: {text}", ""])
+            result.extend(reply_parts)
+            return _append_group_option(result, group, option)
 
         if speaker_name != current_speaker:
             message_parts = ["| message", f"| name :: {speaker_name}"]

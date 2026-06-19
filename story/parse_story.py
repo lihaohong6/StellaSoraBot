@@ -213,18 +213,13 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
             else:
                 rows.append(StoryRow("sound_effect", {"files": audio_file}))
 
-        def set_char():
-            # Character positioning and sprite changes
-            char_id = params[3]
-            char_part = params[4]
-            char_expression = params[5]
-
-            character_name = get_character_name_from_id(char_id)
-
-            # Update character state with variant and expression
+        def update_character_state(char_id: str, char_part: str, char_expression: str):
             char_state = state.get_character_state(char_id)
             char_state.update(variant=char_part, expression=char_expression)
 
+        def append_character_state(char_id: str, char_part: str, char_expression: str):
+            character_name = get_character_name_from_id(char_id)
+            update_character_state(char_id, char_part, char_expression)
             rows.append(
                 StoryRow(
                     "character",
@@ -236,6 +231,24 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
                     },
                 )
             )
+
+        def set_char():
+            char_id = params[3]
+            char_part = params[4]
+            char_expression = params[5]
+            append_character_state(char_id, char_part, char_expression)
+
+        def set_char_head():
+            char_id = params[5]
+            char_part = params[6]
+            char_expression = params[7]
+            append_character_state(char_id, char_part, char_expression)
+
+        def ctrl_char():
+            char_id = params[0]
+            char_part = params[1]
+            char_expression = params[2]
+            update_character_state(char_id, char_part, char_expression)
 
         def set_main_role_talk():
             # Player character dialogue
@@ -302,6 +315,8 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
             "SetSceneHeading": set_scene_heading,
             "SetAudio": set_audio,
             "SetChar": set_char,
+            "SetCharHead": set_char_head,
+            "CtrlChar": ctrl_char,
             "SetMainRoleTalk": set_main_role_talk,
             "SetChoiceBegin": set_choice_begin,
             "SetChoiceJumpTo": set_choice_jump,
