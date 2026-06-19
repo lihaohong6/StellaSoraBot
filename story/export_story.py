@@ -1,7 +1,7 @@
 import re
 from dataclasses import dataclass
 from functools import cache
-from typing import Optional, Dict, List
+from typing import Optional
 
 from character_info.char_sprite_face import sanitize_css_class
 from story.parse_story import get_story_episodes, StoryEpisode, StoryRow
@@ -22,7 +22,7 @@ class StoryExport:
     title: str
     subtitle: str
     description: str
-    branches: Dict[str, str]
+    branches: dict[str, str]
     main_content: str
 
 
@@ -30,6 +30,12 @@ class StoryExport:
 class StoryPageExport:
     page_title: str
     episode_id: str
+
+
+@dataclass
+class ChoiceContext:
+    group: Optional[int] = None
+    option: Optional[str] = None
 
 
 def get_character_sprite_path(
@@ -49,9 +55,28 @@ def character_id_to_speaker_name(char_id: str) -> str:
     return char_id
 
 
+def _append_group_option(
+    lines: list[str],
+    group: Optional[int],
+    option: Optional[str],
+) -> list[str]:
+    if group is None or option is None or not lines:
+        return lines
+    result = []
+    for line in lines:
+        if line == "" and result:
+            result.append(f"| group :: {group}")
+            result.append(f"| option :: {option}")
+        result.append(line)
+    return result
+
+
 def story_row_to_messenger(
-    row: StoryRow, current_speaker: Optional[str] = None
-) -> List[str]:
+    row: StoryRow,
+    current_speaker: Optional[str] = None,
+    group: Optional[int] = None,
+    option: Optional[str] = None,
+) -> list[str]:
     result = []
 
     if row.name == "dialogue":
@@ -63,7 +88,7 @@ def story_row_to_messenger(
 
         if is_reply:
             result.extend(["| reply", f"| text :: {text}", ""])
-            return result
+            return _append_group_option(result, group, option)
 
         speaker_name = character_id_to_speaker_name(speaker)
 
@@ -81,7 +106,7 @@ def story_row_to_messenger(
             result.extend(message_parts)
         else:
             result.extend(["| message", f"| text :: {text}", ""])
-        return result
+        return _append_group_option(result, group, option)
 
     if row.name == "scene_heading":
         time = row.attributes.get("time", "")
@@ -91,7 +116,7 @@ def story_row_to_messenger(
             if time:
                 scene_text = f"{time} - {location}"
             result.extend(["| info", f"| text :: {scene_text}", ""])
-        return result
+        return _append_group_option(result, group, option)
 
     if row.name == "background":
         bg_image = row.attributes.get("image", "")
@@ -105,7 +130,7 @@ def story_row_to_messenger(
             result.extend(
                 ["| raw", f"| content :: {{{{Story/background | {bg_image}}}}}", ""]
             )
-        return result
+        return _append_group_option(result, group, option)
 
     if row.name == "bgm":
         action = row.attributes.get("action", "play")
@@ -116,7 +141,7 @@ def story_row_to_messenger(
                 result.extend(["| raw", f"| content :: {{{{Story/bgm|Bg{bgm_file}.ogg}}}}", ""])
         elif action == "stop":
             result.extend(["| raw", "| content :: {{Story/bgm stop}}", ""])
-        return result
+        return _append_group_option(result, group, option)
 
     if row.name == "sound_effect":
         all_files = row.attributes.get("files", "")
@@ -126,13 +151,31 @@ def story_row_to_messenger(
                 templates.append(f"{{{{Audio/se|{se_file}.ogg}}}}")
         if templates:
             result.extend(["| raw", f"| content :: {' '.join(templates)}", ""])
-        return result
+        return _append_group_option(result, group, option)
 
     if row.name == "clear":
         result.extend(["| info", "| text :: [Characters cleared]", ""])
-        return result
+        return _append_group_option(result, group, option)
 
     return result
+
+
+def _get_choice_options(row: StoryRow) -> list[str]:
+    options = []
+    i = 1
+    while f"option{i}" in row.attributes:
+        options.append(row.attributes[f"option{i}"])
+        i += 1
+    return options
+
+
+def _current_group_option(
+    choice_stack: list[ChoiceContext],
+) -> tuple[Optional[int], Optional[str]]:
+    for context in reversed(choice_stack):
+        if context.group is not None and context.option is not None:
+            return context.group, context.option
+    return None, None
 
 
 def episode_to_messenger_template(episode: StoryEpisode) -> str:
@@ -148,9 +191,54 @@ def episode_to_messenger_template(episode: StoryEpisode) -> str:
         result.extend(["| info", f"| text :: {episode.description}", ""])
 
     current_speaker = None
+    choice_group_counter = 0
+    choice_stack: list[ChoiceContext] = []
 
     for row in episode.rows:
-        messenger_rows = story_row_to_messenger(row, current_speaker)
+        if row.name == "choice_begin":
+            options = _get_choice_options(row)
+            if len(options) == 1:
+                group, option = _current_group_option(choice_stack)
+                result.extend(
+                    _append_group_option(
+                        ["| reply", f"| text :: {options[0]}", ""],
+                        group,
+                        option,
+                    )
+                )
+                choice_stack.append(ChoiceContext())
+            else:
+                choice_group_counter += 1
+                choice_stack.append(ChoiceContext(choice_group_counter))
+                options_block = ["| options", f"| group :: {choice_group_counter}"]
+                for i, opt_text in enumerate(options, 1):
+                    options_block.append(f"| option{i} :: {opt_text}")
+                options_block.append("")
+                result.extend(options_block)
+            continue
+
+        if row.name == "choice_jump":
+            if choice_stack and choice_stack[-1].group is not None:
+                choice_stack[-1].option = row.attributes.get("option")
+            continue
+
+        if row.name == "choice_rollover":
+            if choice_stack and choice_stack[-1].group is not None:
+                choice_stack[-1].option = None
+            continue
+
+        if row.name == "choice_end":
+            if choice_stack:
+                choice_stack.pop()
+            continue
+
+        group, option = _current_group_option(choice_stack)
+        messenger_rows = story_row_to_messenger(
+            row,
+            current_speaker,
+            group,
+            option,
+        )
         result.extend(messenger_rows)
 
         if row.name == "dialogue":
@@ -162,7 +250,7 @@ def episode_to_messenger_template(episode: StoryEpisode) -> str:
     return "\n".join(result)
 
 
-def create_branch_tabs(branch_groups: Dict[str, str], base_episode_id: str) -> str:
+def create_branch_tabs(branch_groups: dict[str, str], base_episode_id: str) -> str:
     if not branch_groups:
         return ""
 
@@ -176,7 +264,7 @@ def create_branch_tabs(branch_groups: Dict[str, str], base_episode_id: str) -> s
     return "\n".join(tab_result)
 
 
-def process_story_branches(episodes: Dict[str, StoryEpisode]) -> Dict[str, StoryExport]:
+def process_story_branches(episodes: dict[str, StoryEpisode]) -> dict[str, StoryExport]:
     exports = {}
     processed_episodes = set()
 

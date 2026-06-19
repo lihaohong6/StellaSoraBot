@@ -263,6 +263,37 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
                 )
             )
 
+        def append_choice_begin(choice_id: str, choice_texts: list[Any]):
+            attrs: dict[str, str] = {"choice_id": choice_id}
+            option_num = 0
+            for text in choice_texts:
+                if text:
+                    option_num += 1
+                    attrs[f"option{option_num}"] = process_text(str(text))
+            rows.append(StoryRow("choice_begin", attrs))
+
+        def set_choice_begin():
+            append_choice_begin(str(params[0]), params[12])
+
+        def set_personality_choice():
+            append_choice_begin(str(params[0]), params[2:5])
+
+        def set_choice_jump():
+            rows.append(StoryRow("choice_jump", {
+                "choice_id": str(params[0]),
+                "option": str(params[1]),
+            }))
+
+        def set_choice_rollover():
+            rows.append(StoryRow("choice_rollover", {
+                "choice_id": str(params[0]),
+            }))
+
+        def set_choice_end():
+            rows.append(StoryRow("choice_end", {
+                "choice_id": str(params[0]),
+            }))
+
         # Dispatcher for different command types
         dispatcher = {
             "SetTalk": set_talk,
@@ -272,6 +303,14 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
             "SetAudio": set_audio,
             "SetChar": set_char,
             "SetMainRoleTalk": set_main_role_talk,
+            "SetChoiceBegin": set_choice_begin,
+            "SetChoiceJumpTo": set_choice_jump,
+            "SetChoiceRollover": set_choice_rollover,
+            "SetChoiceEnd": set_choice_end,
+            "SetPersonalityChoice": set_personality_choice,
+            "SetPersonalityChoiceJumpTo": set_choice_jump,
+            "SetPersonalityChoiceRollover": set_choice_rollover,
+            "SetPersonalityChoiceEnd": set_choice_end,
             "End": lambda: None,
         }
 
