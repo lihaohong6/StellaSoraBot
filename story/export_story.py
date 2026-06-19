@@ -52,6 +52,11 @@ def story_row_to_messenger(
         text = row.attributes.get("text", "")
         variant = row.attributes.get("variant", "a")
         expression = row.attributes.get("expression", "00")
+        is_reply = row.attributes.get("is_reply") == "true"
+
+        if is_reply:
+            result.extend(["| reply", f"| text :: {text}", ""])
+            return result
 
         speaker_name = character_id_to_speaker_name(speaker)
 

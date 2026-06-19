@@ -42,6 +42,7 @@ class CharacterState:
 class StoryState:
     current_speaker: Optional[str] = None
     character_states: Optional[dict[str, CharacterState]] = None
+    pending_reply_char: Optional[str] = None
 
     def __post_init__(self):
         if self.character_states is None:
@@ -137,6 +138,10 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
             # Get character state for sprite information
             char_state = state.get_character_state(char_id)
 
+            is_reply = char_id == state.pending_reply_char
+            if is_reply:
+                state.pending_reply_char = None
+
             rows.append(
                 StoryRow(
                     "dialogue",
@@ -148,6 +153,7 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
                         "character_id": char_id,
                         "variant": char_state.variant,
                         "expression": char_state.expression,
+                        "is_reply": "true" if is_reply else "",
                     },
                 )
             )
@@ -247,7 +253,7 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
             char_id = params[8]  # Character ID is at index 9 (0-based)
 
             character_name = get_character_name_from_id(char_id)
-            # This would be followed by a SetTalk command for the actual text
+            state.pending_reply_char = char_id
             rows.append(
                 StoryRow(
                     "main_role_talk",
