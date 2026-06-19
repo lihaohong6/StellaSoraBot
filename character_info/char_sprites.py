@@ -21,6 +21,11 @@ class SpriteData:
     y: float
     width: float
     height: float
+    # Size of the full source frame (m_Rect) the textureRect is measured against.
+    # Sprites are centered (pivot 0.5) within this frame, so the frame size is
+    # needed to align sprites whose frames differ (e.g. Female tyrant ac/ad).
+    frame_width: float
+    frame_height: float
 
 
 @dataclass
@@ -38,6 +43,12 @@ class Sprite:
 def compute_offsets(base: SpriteData, top: SpriteData, bh: float, th: float) -> tuple[int, int]:
     off_x = top.x - base.x
     off_y = (bh - th) + (base.y - top.y)
+    # textureRect coordinates are relative to each sprite's own frame origin
+    # (bottom-left). When the base and top frames differ in size, their origins
+    # don't coincide; since both are centered on the same pivot, correct by half
+    # the difference in frame size to realign them.
+    off_x += (base.frame_width - top.frame_width) / 2
+    off_y += (top.frame_height - base.frame_height) / 2
     return int(round(off_x)), int(round(off_y))
 
 
@@ -92,21 +103,20 @@ def process_assets(sprites: list[Sprite], char: Character, variant_name: str) ->
 def retrieve_sprite_json_data(f: Path) -> SpriteData | None:
     data = json.load(open(f, "r", encoding="utf-8"))
     try:
-        data = data['m_RD']['textureRect']
+        rect = data['m_RD']['textureRect']
+        frame = data['m_Rect']
     except KeyError:
         print(f"Failed to retrieve sprite json data on {f}")
         return None
-    return SpriteData(data['x'], data['y'], data['width'], data['height'])
+    return SpriteData(rect['x'], rect['y'], rect['width'], rect['height'],
+                      frame['width'], frame['height'])
 
 
 chars_blacklist: set[str] = {
     "Aobelle", "Aspara", "Kieb",
 }
 
-variant_blacklist: dict[str, set[str]] = {
-    "Female tyrant": {"ac", "ad", "p", "q", "s", "t", "u", "v", "w", "x", "y", "z"},
-    "Male tyrant": {"ac", "ad", "p", "q", "s", "t", "u", "v", "w", "x", "y", "z"},
-}
+variant_blacklist: dict[str, set[str]] = {}
 
 
 @dataclass
@@ -211,9 +221,6 @@ def filter_sprites(char_name: str, sprite_dict: dict[str, list[Sprite]]) -> dict
         if variant in blacklisted:
             continue
         sprites = sprite_dict[variant]
-        # Manually exclude a bad image
-        if char_name == "Tilia" and variant == "awakened":
-            sprites = [sp for sp in sprites if sp.number != 4]
         result[variant] = sprites
     return result
 
