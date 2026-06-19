@@ -72,8 +72,8 @@ def compose(base: Sprite, top: Sprite, out: Path) -> None:
 def process_assets(sprites: list[Sprite], char: Character, variant_name: str) -> None:
     assert sprites[0].number == 1
     base = sprites[0]
-    # Single sprite without variant
     if len(sprites) == 1:
+        base.number = 2
         out = base.get_sprite_path(char.name, variant_name)
         out.parent.mkdir(exist_ok=True, parents=True)
         if not out.exists():
