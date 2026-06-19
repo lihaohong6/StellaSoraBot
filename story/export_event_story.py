@@ -80,8 +80,6 @@ def get_event_story_entries() -> list[EventStoryEntry]:
         if event is None:
             print(f"WARNING: Event story has no event metadata for {event_id}")
             continue
-        if "Daring Adventure" not in event.name:
-            continue
         _, rows = _event_story_rows(avg_activity_id)
         sequence = 0
         for row in rows:
