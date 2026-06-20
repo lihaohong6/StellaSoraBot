@@ -191,7 +191,14 @@ def _current_group_option(
 
 
 def episode_to_messenger_template(episode: StoryEpisode) -> str:
-    result = ["{{Messenger", "", "| config", "| image-default-width :: 300px", ""]
+    result = [
+        "{{Messenger",
+        "",
+        "| config",
+        "| image-default-width :: 300px",
+        "| columns :: 3",
+        "",
+    ]
 
     if episode.title or episode.subtitle:
         episode_info = f"{episode.title}"

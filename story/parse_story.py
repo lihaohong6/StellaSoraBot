@@ -213,7 +213,11 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
             else:
                 rows.append(StoryRow("sound_effect", {"files": audio_file}))
 
-        def update_character_state(char_id: str, char_part: str, char_expression: str):
+        def update_character_state(
+            char_id: str,
+            char_part: Optional[str],
+            char_expression: Optional[str],
+        ):
             char_state = state.get_character_state(char_id)
             char_state.update(variant=char_part, expression=char_expression)
 
@@ -253,14 +257,15 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
         def set_main_role_talk():
             # Player character dialogue
             # Based on actual parameter structure from story files:
-            # [position, _, expression, emoji, _, direction, _, _, char_id]
+            # [position, _, expression, emoji, _, part, _, _, char_id]
             position = params[0]
             expression = params[2]
             emoji = params[3]
-            direction = params[5]
+            char_part = params[5]
             char_id = params[8]  # Character ID is at index 9 (0-based)
 
             character_name = get_character_name_from_id(char_id)
+            update_character_state(char_id, char_part, expression)
             state.pending_reply_char = char_id
             rows.append(
                 StoryRow(
@@ -269,9 +274,10 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
                         "position": str(position),
                         "character": character_name,
                         "character_id": char_id,
+                        "part": char_part,
                         "expression": expression,
                         "emoji": emoji,
-                        "direction": str(direction),
+                        "direction": str(char_part),
                     },
                 )
             )
