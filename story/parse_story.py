@@ -43,6 +43,7 @@ class StoryState:
     current_speaker: Optional[str] = None
     character_states: Optional[dict[str, CharacterState]] = None
     pending_reply_char: Optional[str] = None
+    current_background: Optional[str] = None
 
     def __post_init__(self):
         if self.character_states is None:
@@ -175,13 +176,16 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
             )
 
         def set_bg():
-            bg_image: str = params[1]
+            bg_image = str(params[1]).lower()
+            if bg_image == state.current_background:
+                return
+            state.current_background = bg_image
 
             rows.append(
                 StoryRow(
                     "background",
                     {
-                        "image": bg_image.lower(),
+                        "image": bg_image,
                     },
                 )
             )
