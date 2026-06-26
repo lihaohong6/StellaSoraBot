@@ -13,6 +13,7 @@ from story.export_story import (
     export_bgm_files,
     export_sound_effects,
     save_story_pages,
+    with_tyrant_gender_selector,
 )
 from story.parse_story import (
     load_story_config,
@@ -195,7 +196,9 @@ def build_event_story_pages() -> dict[str, str]:
                 episodes[entry.episode_id],
                 choice_target_links.get(entry.episode_id),
             )
-            pages[entry.page_title] = f"{top}\n{content}\n{bottom}"
+            pages[entry.page_title] = (
+                f"{top}\n{with_tyrant_gender_selector(content)}\n{bottom}"
+            )
     return pages
 
 

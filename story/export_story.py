@@ -40,6 +40,9 @@ class ChoiceContext:
 
 
 PROTAGONIST_CHARACTER_IDS = frozenset({"avg3_100"})
+TYRANT_GENDER_GROUP = "tgender"
+FEMALE_TYRANT_NAME = "Female tyrant"
+MALE_TYRANT_NAME = "Male tyrant"
 
 
 def get_character_sprite_path(
@@ -57,6 +60,56 @@ def get_character_sprite_path(
 
 def character_id_to_speaker_name(char_id: str) -> str:
     return char_id
+
+
+def with_tyrant_gender_selector(content: str) -> str:
+    return "{{GenderToggle}}\n" + content
+
+
+def _tyrant_sprite_name(char_name: str) -> str:
+    if char_name in {FEMALE_TYRANT_NAME, MALE_TYRANT_NAME}:
+        return FEMALE_TYRANT_NAME
+    return char_name
+
+
+def _gendered_background_pair(bg_image: str) -> tuple[str, str] | None:
+    replacements = [
+        ("female_tyrant", "male_tyrant"),
+        ("female", "male"),
+    ]
+    avgbg_names = _get_avgbg_names()
+    for female_text, male_text in replacements:
+        if female_text not in bg_image:
+            continue
+        male_image = bg_image.replace(female_text, male_text)
+        if bg_image.startswith("story") and male_image.startswith("story"):
+            return bg_image, male_image
+        if bg_image in avgbg_names and male_image in avgbg_names:
+            return bg_image, male_image
+    return None
+
+
+def _story_background_template(bg_image: str) -> str | None:
+    if bg_image.startswith("story"):
+        return f"{{{{Story/background | {bg_image}}}}}"
+    if bg_image in _get_avgbg_names():
+        return f"{{{{Story/background | BG_{bg_image}}}}}"
+    return None
+
+
+def _story_background_content(bg_image: str) -> str | None:
+    pair = _gendered_background_pair(bg_image)
+    if pair is not None:
+        female_template = _story_background_template(pair[0])
+        male_template = _story_background_template(pair[1])
+        if female_template is not None and male_template is not None:
+            return (
+                "{{GenderContent"
+                f"|{female_template}"
+                f"|{male_template}"
+                "}}"
+            )
+    return _story_background_template(bg_image)
 
 
 def _append_group_option(
@@ -95,17 +148,18 @@ def story_row_to_messenger(
         )
 
         speaker_name = character_id_to_speaker_name(speaker)
+        sprite_name = _tyrant_sprite_name(speaker_name)
 
         # Skip image if expression is "00"
         image_path = None
         if expression != "00":
-            image_path = get_character_sprite_path(speaker_name, variant, expression)
+            image_path = get_character_sprite_path(sprite_name, variant, expression)
 
         if is_reply:
             reply_parts = ["| reply"]
             if image_path:
                 reply_parts.append(f"| image :: {image_path}")
-                reply_parts.append(f"| class :: {sanitize_css_class(speaker_name, variant)}")
+                reply_parts.append(f"| class :: {sanitize_css_class(sprite_name, variant)}")
             reply_parts.extend([f"| text :: {text}", ""])
             result.extend(reply_parts)
             return _append_group_option(result, group, option)
@@ -114,7 +168,7 @@ def story_row_to_messenger(
             message_parts = ["| message", f"| name :: {speaker_name}"]
             if image_path:
                 message_parts.append(f"| image :: {image_path}")
-                message_parts.append(f"| class :: {sanitize_css_class(speaker_name, variant)}")
+                message_parts.append(f"| class :: {sanitize_css_class(sprite_name, variant)}")
             message_parts.extend([f"| text :: {text}", ""])
             result.extend(message_parts)
         else:
@@ -134,15 +188,10 @@ def story_row_to_messenger(
     if row.name == "background":
         bg_image = row.attributes.get("image", "")
         if bg_image and bg_image != "bg_black":
-            if bg_image.startswith("story"):
-                pass
-            elif bg_image in _get_avgbg_names():
-                bg_image = f"BG_{bg_image}"
-            else:
+            content = _story_background_content(bg_image)
+            if content is None:
                 return result
-            result.extend(
-                ["| raw", f"| content :: {{{{Story/background | {bg_image}}}}}", ""]
-            )
+            result.extend(["| raw", f"| content :: {content}", ""])
         return _append_group_option(result, group, option)
 
     if row.name == "bgm":
@@ -324,7 +373,7 @@ def create_branch_tabs(branch_groups: dict[str, str], base_episode_id: str) -> s
         tab_result.extend([f"| {tab_name}", f"| {branch_content}", ""])
 
     tab_result.append("}}")
-    return "\n".join(tab_result)
+    return with_tyrant_gender_selector("\n".join(tab_result))
 
 
 def process_story_branches(episodes: dict[str, StoryEpisode]) -> dict[str, StoryExport]:
@@ -351,7 +400,7 @@ def process_story_branches(episodes: dict[str, StoryEpisode]) -> dict[str, Story
 
     for episode_id, episode in episodes.items():
         if episode_id not in processed_episodes:
-            content = episode_to_messenger_template(episode)
+            content = with_tyrant_gender_selector(episode_to_messenger_template(episode))
             exports[episode_id] = StoryExport(
                 episode_id=episode_id,
                 title=episode.title,
@@ -372,8 +421,8 @@ def build_story_pages(
     for page_export in page_exports:
         if page_export.episode_id not in episodes:
             continue
-        pages[page_export.page_title] = episode_to_messenger_template(
-            episodes[page_export.episode_id]
+        pages[page_export.page_title] = with_tyrant_gender_selector(
+            episode_to_messenger_template(episodes[page_export.episode_id])
         )
     return pages
 

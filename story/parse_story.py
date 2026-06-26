@@ -85,8 +85,21 @@ def get_character_name_from_id(char_id: str | int) -> str:
 
 def process_text(text: str) -> str:
     sex_dict = get_character_sex_strings()
-    text, _ = re.subn(r"==SEX\d*==", lambda m: "/".join(sex_dict[m.group(0)]), text)
+    gender_tabs: dict[str, str] = {}
+
+    def replace_sex_marker(match: re.Match[str]) -> str:
+        values = sex_dict.get(match.group(0))
+        if values is None:
+            return match.group(0)
+        female, male = (escape_text(value) for value in values)
+        token = f"__STORY_GENDER_TAB_{len(gender_tabs)}__"
+        gender_tabs[token] = f"{{{{GenderContent|1={female}|2={male}}}}}"
+        return token
+
+    text, _ = re.subn(r"==SEX\d*==", replace_sex_marker, text)
     text = escape_text(text)
+    for token, tab in gender_tabs.items():
+        text = text.replace(token, tab)
     return text
 
 
