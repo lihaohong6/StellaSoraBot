@@ -34,6 +34,7 @@ class StoryPageExport:
 
 @dataclass
 class ChoiceContext:
+    choice_id: Optional[str] = None
     group: Optional[int] = None
     option: Optional[str] = None
 
@@ -190,7 +191,35 @@ def _current_group_option(
     return None, None
 
 
-def episode_to_messenger_template(episode: StoryEpisode) -> str:
+def _append_choice_target_link(
+    result: list[str],
+    context: ChoiceContext,
+    choice_target_links: dict[tuple[str, str], str],
+) -> None:
+    if context.choice_id is None or context.group is None or context.option is None:
+        return
+    target_page = choice_target_links.get((context.choice_id, context.option))
+    if target_page is None:
+        return
+    target_label = target_page.rsplit("/", 1)[-1]
+    result.extend(
+        [
+            "| info",
+            f"| text :: Continue to [[{target_page}|{target_label}]]",
+            f"| group :: {context.group}",
+            f"| option :: {context.option}",
+            "",
+        ]
+    )
+
+
+def episode_to_messenger_template(
+    episode: StoryEpisode,
+    choice_target_links: dict[tuple[str, str], str] | None = None,
+) -> str:
+    if choice_target_links is None:
+        choice_target_links = {}
+
     result = [
         "{{Messenger",
         "",
@@ -228,7 +257,12 @@ def episode_to_messenger_template(episode: StoryEpisode) -> str:
                 choice_stack.append(ChoiceContext())
             else:
                 choice_group_counter += 1
-                choice_stack.append(ChoiceContext(choice_group_counter))
+                choice_stack.append(
+                    ChoiceContext(
+                        row.attributes.get("choice_id"),
+                        choice_group_counter,
+                    )
+                )
                 options_block = ["| options", f"| group :: {choice_group_counter}"]
                 for i, opt_text in enumerate(options, 1):
                     options_block.append(f"| option{i} :: {opt_text}")
@@ -243,11 +277,21 @@ def episode_to_messenger_template(episode: StoryEpisode) -> str:
 
         if row.name == "choice_rollover":
             if choice_stack and choice_stack[-1].group is not None:
+                _append_choice_target_link(
+                    result,
+                    choice_stack[-1],
+                    choice_target_links,
+                )
                 choice_stack[-1].option = None
             continue
 
         if row.name == "choice_end":
             if choice_stack:
+                _append_choice_target_link(
+                    result,
+                    choice_stack[-1],
+                    choice_target_links,
+                )
                 choice_stack.pop()
             continue
 

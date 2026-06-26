@@ -9,11 +9,10 @@ from wikitextparser import parse
 
 from page_generators.events import get_all_events
 from story.export_story import (
-    build_story_pages,
+    episode_to_messenger_template,
     export_bgm_files,
     export_sound_effects,
     save_story_pages,
-    StoryPageExport,
 )
 from story.parse_story import (
     load_story_config,
@@ -31,6 +30,7 @@ class EventStoryEntry:
     page_title: str
     act_title: str
     episode_id: str
+    parent_episode_ids: tuple[str, ...]
 
 
 @cache
@@ -105,6 +105,10 @@ def get_event_story_entries() -> list[EventStoryEntry]:
                     page_title=page_title,
                     act_title=act_title,
                     episode_id=normalize_story_id(story_id),
+                    parent_episode_ids=tuple(
+                        normalize_story_id(parent_id)
+                        for parent_id in row.get("ParentStoryId", []) or []
+                    ),
                 )
             )
 
@@ -124,27 +128,74 @@ def get_event_story_episodes() -> dict[str, StoryEpisode]:
     return episodes
 
 
+def _major_choice_target_links(
+    entries: list[EventStoryEntry],
+    episodes: dict[str, StoryEpisode],
+) -> dict[str, dict[tuple[str, str], str]]:
+    result: dict[str, dict[tuple[str, str], str]] = {}
+
+    for entry in entries:
+        episode = episodes.get(entry.episode_id)
+        if episode is None:
+            continue
+
+        child_entries = [
+            child_entry
+            for child_entry in entries
+            if entry.episode_id in child_entry.parent_episode_ids
+        ]
+        if not child_entries:
+            continue
+
+        for row in episode.rows:
+            if row.name != "choice_begin":
+                continue
+            if row.attributes.get("choice_type") != "major":
+                continue
+
+            options = [
+                key.removeprefix("option")
+                for key in row.attributes
+                if re.fullmatch(r"option\d+", key)
+            ]
+            options = sorted(options, key=int)
+            if len(options) != len(child_entries):
+                print(
+                    "WARNING: Major choice target count mismatch for "
+                    f"{entry.page_title}: {len(options)} options, "
+                    f"{len(child_entries)} child acts"
+                )
+                continue
+
+            choice_id = row.attributes["choice_id"]
+            for option, child_entry in zip(options, child_entries):
+                result.setdefault(entry.episode_id, {})[
+                    (choice_id, option)
+                ] = child_entry.page_title
+
+    return result
+
+
 def build_event_story_pages() -> dict[str, str]:
-    base_pages = build_story_pages(
-        [
-            StoryPageExport(entry.page_title, entry.episode_id)
-            for entry in get_event_story_entries()
-        ],
-        get_event_story_episodes(),
-    )
+    episodes = get_event_story_episodes()
     pages: dict[str, str] = {}
     event_entries: dict[str, list[EventStoryEntry]] = {}
     for entry in get_event_story_entries():
-        if entry.page_title in base_pages:
+        if entry.episode_id in episodes:
             event_entries.setdefault(entry.event_name, []).append(entry)
 
     for entries in event_entries.values():
+        choice_target_links = _major_choice_target_links(entries, episodes)
         for i, entry in enumerate(entries):
             prev_page = entries[i - 1].page_title if i > 0 else None
             next_page = entries[i + 1].page_title if i < len(entries) - 1 else None
             top = event_story_template("EventStoryTop", prev_page, next_page)
             bottom = event_story_template("EventStoryBottom", prev_page, next_page)
-            pages[entry.page_title] = f"{top}\n{base_pages[entry.page_title]}\n{bottom}"
+            content = episode_to_messenger_template(
+                episodes[entry.episode_id],
+                choice_target_links.get(entry.episode_id),
+            )
+            pages[entry.page_title] = f"{top}\n{content}\n{bottom}"
     return pages
 
 

@@ -286,8 +286,14 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
                 )
             )
 
-        def append_choice_begin(choice_id: str, choice_texts: list[Any]):
+        def append_choice_begin(
+            choice_id: str,
+            choice_texts: list[Any],
+            choice_type: str = "",
+        ):
             attrs: dict[str, str] = {"choice_id": choice_id}
+            if choice_type:
+                attrs["choice_type"] = choice_type
             option_num = 0
             for text in choice_texts:
                 if text:
@@ -300,6 +306,21 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
 
         def set_personality_choice():
             append_choice_begin(str(params[0]), params[2:5])
+
+        def set_major_choice():
+            choice_texts = []
+            option_params = params[1:-5]
+            for i in range(0, len(option_params), 7):
+                option = option_params[i:i + 7]
+                if len(option) < 4:
+                    continue
+                prompt = str(option[2]).strip()
+                action = str(option[3]).strip()
+                if prompt and action:
+                    choice_texts.append(f"{prompt}<br>{action}")
+                else:
+                    choice_texts.append(prompt or action)
+            append_choice_begin(str(params[0]), choice_texts, "major")
 
         def set_choice_jump():
             rows.append(StoryRow("choice_jump", {
@@ -336,6 +357,10 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
             "SetPersonalityChoiceJumpTo": set_choice_jump,
             "SetPersonalityChoiceRollover": set_choice_rollover,
             "SetPersonalityChoiceEnd": set_choice_end,
+            "SetMajorChoice": set_major_choice,
+            "SetMajorChoiceJumpTo": set_choice_jump,
+            "SetMajorChoiceRollover": set_choice_rollover,
+            "SetMajorChoiceEnd": set_choice_end,
             "End": lambda: None,
         }
 
