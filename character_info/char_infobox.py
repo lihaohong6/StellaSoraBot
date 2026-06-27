@@ -40,8 +40,31 @@ def get_localized_names(char_id: int) -> dict[str, str]:
     return result
 
 
+LAUNCH_DATE = "2025-10-19"
+
+# Only limited banners indicate a new character release.
+# Type 6 "A Fateful Encounter" is a spotlight for permanent characters, not a release event.
+_LIMITED_BANNER_TYPES = {1, 8}
+
+
+@cache
+def get_char_release_dates() -> dict[int, str]:
+    data = autoload("Gacha")
+    result: dict[int, str] = {}
+    for entry in data.values():
+        tid = entry.get("GuaranteeTid")
+        start = entry.get("StartTime")
+        if not tid or not start or entry.get("GachaType") not in _LIMITED_BANNER_TYPES:
+            continue
+        date_str = start[:10]
+        if tid not in result or date_str < result[tid]:
+            result[tid] = date_str
+    return result
+
+
 def update_infobox():
     auto_link = ["Lucky Oasis"]
+    release_dates = get_char_release_dates()
     for char, page in get_character_pages().items():
         parsed = parse(page.text)
         target = find_template_by_name(parsed, "TrekkerData")
@@ -57,6 +80,7 @@ def update_infobox():
             ("weapon", char.weapon),
             ("rate", char.rate),
             ("element", char.element.name.capitalize()),
+            ("release_date", release_dates.get(char.id, LAUNCH_DATE)),
         ]
         for arg, value in pairs:
             for link in auto_link:
@@ -65,7 +89,7 @@ def update_infobox():
         # Update only. Do not overwrite.
         pairs = [
             ("image_profile", f"{char.name}.png"),
-            ("image_artwork", f"{char.name}_a_02.png")
+            ("image_artwork", f"{char.name}_a_02.png"),
         ]
         for k, v in get_localized_names(char.id).items():
             pairs.append((f'{k}_name', v))
