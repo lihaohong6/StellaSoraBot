@@ -11,6 +11,7 @@ from page_generators.events import get_all_events
 from story.export_story import (
     episode_to_messenger_template,
     export_bgm_files,
+    export_front_object_files,
     export_sound_effects,
     save_story_pages,
     with_tyrant_gender_selector,
@@ -263,6 +264,7 @@ def main():
     event_episodes = get_event_story_episodes()
     export_bgm_files(event_episodes)
     export_sound_effects(event_episodes)
+    export_front_object_files(event_episodes)
     save_event_stories()
     save_event_story_sections()
 

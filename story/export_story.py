@@ -4,6 +4,7 @@ from functools import cache
 from typing import Optional
 
 from character_info.char_sprite_face import sanitize_css_class
+from character_info.characters import id_to_char
 from story.parse_story import get_story_episodes, StoryEpisode, StoryRow
 from story.story_audio import get_bgm_path, get_sound_effect_path
 from utils.data_utils import assets_root
@@ -58,6 +59,10 @@ def get_character_sprite_path(
     return f"{char_name}_{variant}_{expr_num:02d}.png"
 
 
+def get_front_object_file_name(image_name: str) -> str:
+    return f"Story element {image_name}.png"
+
+
 def character_id_to_speaker_name(char_id: str) -> str:
     return char_id
 
@@ -70,6 +75,15 @@ def _tyrant_sprite_name(char_name: str) -> str:
     if char_name in {FEMALE_TYRANT_NAME, MALE_TYRANT_NAME}:
         return FEMALE_TYRANT_NAME
     return char_name
+
+
+def _sprite_name_for_character_id(character_id: str, fallback_name: str) -> str:
+    match = re.fullmatch(r"avg1_(\d+)", character_id)
+    if match:
+        character = id_to_char(match.group(1))
+        if character is not None:
+            return character.name
+    return fallback_name
 
 
 def _gendered_background_pair(bg_image: str) -> tuple[str, str] | None:
@@ -148,7 +162,8 @@ def story_row_to_messenger(
         )
 
         speaker_name = character_id_to_speaker_name(speaker)
-        sprite_name = _tyrant_sprite_name(speaker_name)
+        sprite_name = _sprite_name_for_character_id(character_id, speaker_name)
+        sprite_name = _tyrant_sprite_name(sprite_name)
 
         # Skip image if expression is "00"
         image_path = None
@@ -213,6 +228,14 @@ def story_row_to_messenger(
                 templates.append(f"{{{{Audio/se|{se_file}.ogg}}}}")
         if templates:
             result.extend(["| raw", f"| content :: {' '.join(templates)}", ""])
+        return _append_group_option(result, group, option)
+
+    if row.name == "front_object":
+        image_name = row.attributes.get("image", "")
+        if image_name:
+            file_name = get_front_object_file_name(image_name)
+            content = f"[[File:{file_name}|200px|link=]]"
+            result.extend(["| raw", f"| content :: {content}", ""])
         return _append_group_option(result, group, option)
 
     if row.name == "clear":
@@ -439,6 +462,7 @@ def main():
     episodes = get_story_episodes()
     export_bgm_files(episodes)
     export_sound_effects(episodes)
+    export_front_object_files(episodes)
     exports = process_story_branches(episodes)
 
     # Get the first story export
@@ -454,7 +478,7 @@ def main():
             print(export_data.main_content)
 
 
-def export_bgm_files(episodes: dict[str, StoryEpisode]):
+def export_bgm_files(episodes: dict[str, StoryEpisode]) -> None:
     bgm_files: set[str] = set()
     for episode in episodes.values():
         for row in episode.rows:
@@ -479,7 +503,7 @@ def export_bgm_files(episodes: dict[str, StoryEpisode]):
     process_uploads(upload_requests)
 
 
-def export_sound_effects(episodes: dict[str, StoryEpisode]):
+def export_sound_effects(episodes: dict[str, StoryEpisode]) -> None:
     sound_effects: set[str] = set()
     for episode in episodes.values():
         for row in episode.rows:
@@ -502,6 +526,30 @@ def export_sound_effects(episodes: dict[str, StoryEpisode]):
             "[[Category:Sound effects]]",
             'batch upload story sound effects')
         )
+    process_uploads(upload_requests)
+
+
+def export_front_object_files(episodes: dict[str, StoryEpisode]) -> None:
+    image_names: set[str] = set()
+    for episode in episodes.values():
+        for row in episode.rows:
+            if row.name == "front_object":
+                image_name = row.attributes.get("image", "")
+                if image_name:
+                    image_names.add(image_name)
+
+    upload_requests = []
+    for image_name in sorted(image_names):
+        path = assets_root / "icon" / "avgelement" / f"{image_name}.png"
+        if not path.exists():
+            print(f"WARNING: Could not find front object asset for {image_name}")
+            continue
+        upload_requests.append(UploadRequest(
+            path,
+            f"File:{get_front_object_file_name(image_name)}",
+            "[[Category:Story element images]]",
+            "batch upload story element images"
+        ))
     process_uploads(upload_requests)
 
 

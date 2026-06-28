@@ -44,10 +44,13 @@ class StoryState:
     character_states: Optional[dict[str, CharacterState]] = None
     pending_reply_char: Optional[str] = None
     current_background: Optional[str] = None
+    current_front_objects: Optional[dict[str, str]] = None
 
     def __post_init__(self):
         if self.character_states is None:
             self.character_states = {}
+        if self.current_front_objects is None:
+            self.current_front_objects = {}
 
     def reset_speaker(self):
         self.current_speaker = None
@@ -230,6 +233,38 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
             else:
                 rows.append(StoryRow("sound_effect", {"files": audio_file}))
 
+        def set_front_obj() -> None:
+            assert state.current_front_objects is not None
+            action = params[0]
+            position = str(params[1])
+            image_name = params[2]
+
+            if action == 1:
+                state.current_front_objects.pop(position, None)
+                return
+
+            if action != 0:
+                return
+
+            if not image_name:
+                return
+
+            if image_name in state.current_front_objects.values():
+                state.current_front_objects[position] = image_name
+                return
+
+            state.current_front_objects[position] = image_name
+            rows.append(
+                StoryRow(
+                    "front_object",
+                    {
+                        "image": image_name,
+                        "position": position,
+                        "scale": str(params[5]),
+                    },
+                )
+            )
+
         def update_character_state(
             char_id: str,
             char_part: Optional[str],
@@ -358,6 +393,7 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
             "SetBg": set_bg,
             "SetSceneHeading": set_scene_heading,
             "SetAudio": set_audio,
+            "SetFrontObj": set_front_obj,
             "SetChar": set_char,
             "SetCharHead": set_char_head,
             "CtrlChar": ctrl_char,
