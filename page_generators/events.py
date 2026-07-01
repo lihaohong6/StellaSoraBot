@@ -1,13 +1,23 @@
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from functools import cache
+from pathlib import Path
 from typing import Any
 
 from page_generators.items import get_all_items
-from utils.data_utils import autoload
-from utils.wiki_utils import save_json_page
+from utils.data_utils import assets_root, autoload
+from utils.upload_utils import UploadRequest, process_uploads
+from utils.wiki_utils import PageCreationRequest, process_page_creation_requests, save_json_page
 
+WIKI_TIMEZONE = timezone(timedelta(hours=-7))
+
+EVENT_PAGE_TITLES = {
+    10100: "Daring Adventure! The Ghost Ship Haunts the Deep/2025-10-27",
+    10101: "Guild Sweet Guild (event)",
+    10102: "Beyond the Dream (event)",
+}
 
 @dataclass
 class ItemQty:
@@ -66,6 +76,15 @@ class Event:
     desc: str
 
 
+@dataclass
+class EventPage:
+    event: Event
+    page_title: str
+    image: str
+    image_path: Path | None
+    requirement_level: int | None
+
+
 def _item_qty(items: dict, item_id: int, qty: int) -> ItemQty:
     name = items[item_id].title if item_id in items else ""
     return ItemQty(item_id=item_id, item_name=name, qty=qty)
@@ -89,14 +108,19 @@ def _event_name_from_desc(desc: str) -> str:
 def _event_name_from_activities(activities: list[dict[str, Any]]) -> str:
     for activity in sorted(activities, key=lambda a: a.get("SortId", 0)):
         name = activity.get("Name", "")
-        if name:
+        if name and name.isascii():
             return name
     return ""
 
 
 @cache
+def get_event_group_rows() -> dict[int, dict[str, Any]]:
+    return {v["Id"]: v for v in autoload("ActivityGroup").values()}
+
+
+@cache
 def get_all_events() -> dict[int, Event]:
-    group_data = autoload("ActivityGroup")
+    group_data = get_event_group_rows()
     activity_data = autoload("Activity")
 
     activities_by_group: dict[int, list[dict[str, Any]]] = {}
@@ -207,7 +231,7 @@ def get_all_shops() -> dict[int, EventShop]:
 
 @cache
 def get_event_missions() -> dict[int, list[EventMissionGroup]]:
-    group_data = autoload("ActivityGroup")
+    group_data = get_event_group_rows()
     all_groups = get_all_mission_groups()
 
     # Build ActivityId → list of mission groups
@@ -239,7 +263,7 @@ def get_event_missions() -> dict[int, list[EventMissionGroup]]:
 
 @cache
 def get_event_shops() -> dict[int, EventShop]:
-    group_data = autoload("ActivityGroup")
+    group_data = get_event_group_rows()
     shop_control_data = autoload("ActivityShopControl")
     all_shops = get_all_shops()
 
@@ -263,22 +287,198 @@ def get_event_shops() -> dict[int, EventShop]:
     return result
 
 
-def save_event_missions():
+def _event_start_dt(event: Event) -> datetime:
+    start = datetime.fromisoformat(event.start_time).astimezone(WIKI_TIMEZONE)
+    row = get_event_group_rows()[event.id]
+    if row.get("ActivityGroupType") in (1, 2):
+        start -= timedelta(hours=8)
+    return start
+
+
+def _event_end_dt(event: Event) -> datetime:
+    end = datetime.fromisoformat(event.end_time)
+    if end.second == 0 and end.microsecond == 0:
+        end -= timedelta(minutes=1)
+    return end.astimezone(WIKI_TIMEZONE)
+
+
+def _wiki_date(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%d")
+
+
+def _wiki_time(dt: datetime) -> str:
+    if dt.second:
+        return dt.strftime("%H:%M:%S")
+    return dt.strftime("%H:%M")
+
+
+def _wiki_timestamp(dt: datetime) -> str:
+    if dt.second:
+        return dt.strftime("%Y-%m-%dT%H:%M:%S-07:00")
+    return dt.strftime("%Y-%m-%dT%H:%M-07:00")
+
+
+def _time_template(dt: datetime) -> str:
+    text = f"{_wiki_date(dt)} {_wiki_time(dt)} UTC\u20137"
+    return (
+        "{{Time|"
+        f"{text}|date={_wiki_date(dt)}|time={_wiki_time(dt)}|timezone=-07:00"
+        "}}"
+    )
+
+
+def _period_text(event: Event) -> str:
+    start = _event_start_dt(event)
+    end = _event_end_dt(event)
+    return (
+        f"{_time_template(start)} \u2014 {_time_template(end)} "
+        f"({{{{Countdown|start-time={_wiki_timestamp(start)}|end-time={_wiki_timestamp(end)}}}}})."
+    )
+
+
+def _event_page_title(event: Event, duplicate_names: set[str]) -> str:
+    if event.id in EVENT_PAGE_TITLES:
+        return EVENT_PAGE_TITLES[event.id]
+    if event.name in duplicate_names:
+        return f"{event.name}/{_wiki_date(_event_start_dt(event))}"
+    return event.name
+
+
+def _event_image_name(event: Event) -> str:
+    return f"{event.name} BG.png"
+
+
+def _asset_path_from_res(res: str) -> Path | None:
+    if not res:
+        return None
+    parts = res.split("/")
+    candidates = [
+        assets_root.joinpath(*(p.lower() for p in parts[:-1]), parts[-1] + ".png"),
+        assets_root.joinpath(*(p.lower() for p in parts)).with_suffix(".png"),
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
+
+
+def _event_requirement_level(row: dict[str, Any]) -> int | None:
+    if row.get("StartCondType") != 71:
+        return None
+    params = row.get("StartCondParams", [])
+    if not params:
+        return None
+    return int(params[0])
+
+
+def _is_major_event_row(row: dict[str, Any]) -> bool:
+    return row.get("ActivityGroupType") in (1, 2)
+
+
+def _build_event_page_text(page: EventPage) -> str:
+    event = page.event
+    start = _event_start_dt(event)
+    end = _event_end_dt(event)
+    title_arg = f"| title = {event.name}\n" if "/" not in page.page_title and page.page_title != event.name else ""
+    requirements = ""
+    if page.requirement_level is not None:
+        requirements = f"* [[Authorization Level]] {page.requirement_level}"
+    gallery = f"<gallery>\nFile:{page.image}\n</gallery>" if page.image else ""
+    return f"""{{{{EventData
+{title_arg}| image = {page.image}
+| type = 
+| start = {_wiki_date(start)}
+| end = {_wiki_date(end)}
+}}}}
+'''{event.name}''' is an event in ''[[Stella Sora]]''.
+
+== Details ==
+
+== Story ==
+
+== Period ==
+{_period_text(event)}
+
+== Missions ==
+{{{{EventMissions|id={event.id}}}}}
+
+== Shop ==
+{{{{EventShop|id={event.id}}}}}
+
+== Requirements ==
+{requirements}
+
+== Gallery ==
+=== Images ===
+{gallery}
+
+=== Videos ===
+"""
+
+
+def build_event_pages() -> dict[str, str]:
+    pages = {}
+    for page in get_event_pages().values():
+        pages[page.page_title] = _build_event_page_text(page)
+    return pages
+
+
+@cache
+def get_event_pages() -> dict[int, EventPage]:
+    events = get_all_events()
+    rows = get_event_group_rows()
+    first_event_ids_by_name: dict[str, int] = {}
+    for event in sorted(events.values(), key=_event_start_dt):
+        row = rows[event.id]
+        if event.name and _is_major_event_row(row) and event.name not in first_event_ids_by_name:
+            first_event_ids_by_name[event.name] = event.id
+
+    pages: dict[int, EventPage] = {}
+    for event in events.values():
+        row = rows[event.id]
+        if not _is_major_event_row(row):
+            continue
+        if first_event_ids_by_name.get(event.name) != event.id:
+            continue
+        pages[event.id] = EventPage(
+            event=event,
+            page_title=_event_page_title(event, set()),
+            image=_event_image_name(event),
+            image_path=None,
+            requirement_level=_event_requirement_level(row),
+        )
+    return pages
+
+
+def save_event_missions() -> None:
     save_json_page("Module:EventMissions/data.json", get_event_missions())
 
 
-def save_event_shop():
+def save_event_pages(overwrite: bool = False) -> None:
+    requests = [
+        PageCreationRequest(page.page_title, _build_event_page_text(page), "batch create event pages")
+        for page in get_event_pages().values()
+    ]
+    process_page_creation_requests(requests, overwrite=overwrite)
+
+
+def save_event_shop() -> None:
     save_json_page("Module:EventShop/data.json", get_event_shops())
 
 
-def save_events():
+def save_events() -> None:
     save_json_page("Module:Events/data.json", get_all_events())
 
 
-def main():
+def save_event_all() -> None:
     save_events()
     save_event_missions()
     save_event_shop()
+    save_event_pages(overwrite=False)
+
+
+def main() -> None:
+    save_event_all()
 
 
 if __name__ == "__main__":

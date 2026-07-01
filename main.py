@@ -14,6 +14,7 @@ from character_info.char_story import update_character_stories
 from character_info.private_message import update_private_messages
 from page_generators.cg_uploader import cg_uploader_main
 from page_generators.discs import update_disc_all
+from page_generators.events import save_event_all
 from page_generators.live2d_talent_images import live2d_talent_images_main
 from page_generators.purge_pages import purge_all_pages
 from unpack.unpack_main import export_all_assets
@@ -41,6 +42,7 @@ def main():
     autoload_all_files()
     # export_all_assets()
     update_character_page()
+    save_event_all()
     cg_uploader_main()
     update_disc_all()
     purge_all_pages()
