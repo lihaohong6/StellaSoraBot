@@ -174,6 +174,9 @@ def process_param(param: str) -> tuple[SkillParamType, list[int] | int | str]:
             cur_id += 10
         if str(cur_id) not in value_table:
             raise RuntimeError(f"{file_name} not found for {param}")
+        if param_type == SkillParamType.NONE:
+            key = str(cur_id)
+            return param_type, normalize_percentage(value_table[key][dict_key_hint])
         result = []
         for i in range(0, 10):
             key = str(cur_id + i * 10)

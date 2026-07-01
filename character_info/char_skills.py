@@ -40,10 +40,8 @@ class Skill:
         self.cd = d.get('SkillCD', 0) / 10000.0
         self.energy = d.get('UltraEnergy', 0) / 10000.0
         self.icon = d['Icon'].split("/")[-1]
-        max_params = 0
-        for i in range(1, 100):
-            if "{" + str(i) + "}" in self.desc:
-                max_params = i
+        placeholders = re.findall(r"\{(\d+)}", self.brief_desc + self.desc)
+        max_params = max(map(int, placeholders), default=0)
         self.params = parse_params(d, max_params)
 
     def format_params(self) -> list[str] | None:

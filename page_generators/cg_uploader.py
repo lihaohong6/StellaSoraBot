@@ -18,7 +18,7 @@ def upload_cgs():
             upload_requests.append(UploadRequest(
                 f,
                 "File:" + f.name,
-                f"[[Category:{category}]]",
+                f"[[Category:{category}]][[Category:Uncategorized images]]",
                 "batch upload cutscenes"))
             break
     process_uploads(upload_requests)
