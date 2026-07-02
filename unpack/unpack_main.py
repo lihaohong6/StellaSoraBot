@@ -1,5 +1,6 @@
 from unpack.unpack_audio import export_audio, export_disc_txtp
 from unpack.unpack_dll import generate_dummy_dll
+from unpack.unpack_event_images import export_event_images
 from unpack.unpack_image import export_images
 from unpack.unpack_live2d import export_live2d
 from unpack.unpack_lua import export_lua
@@ -16,6 +17,7 @@ def export_all_assets():
     export_lua()
     export_disc_txtp()
     export_live2d()
+    export_event_images()
 
 
 def main():
