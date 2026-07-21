@@ -96,6 +96,8 @@ def parse_disc_skills(filename: str) -> dict[int, DiscSkill]:
         if group is None:
             continue
         name = v['Name']
+        if "NONEED" in name:
+            continue
         desc = v['Desc']
         desc = skill_escape(desc)
         for i in range(1, 100):
