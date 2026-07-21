@@ -12,7 +12,7 @@ from character_info.characters import id_to_char, Character, get_character_pages
 from utils.data_utils import assets_root, sprite_root, load_lua_table, lua_root
 from utils.upload_utils import UploadRequest, process_uploads
 from utils.wiki_utils import save_json_page, set_arg, save_page, PageCreationRequest, process_page_creation_requests, \
-    find_templates_by_name, find_section
+    find_templates_by_name, find_section, force_section_text
 
 
 @dataclass
@@ -292,7 +292,7 @@ def sprites_to_template(char: str, sprites: dict[str, list[Sprite]], skip: set[s
             name = "Default"
         set_arg(t, "name", name)
         result.append(str(t))
-    return "\n\n".join(result)
+    return "\n\n".join(result) + "\n{{VariantSprites}}"
 
 
 def create_gallery_pages():
@@ -317,14 +317,19 @@ def create_gallery_pages():
 
 ==Sprites==
 {templates}
+
+==Stickers==
+{{{{TrekkerStickers}}}}
 {{{{GalleryBottom}}}}
 """, "batch update gallery page")
-        elif len(char_sprites) - len(skip) > 0:
-            # There are new sprites. Do an incremental update.
-            if len(sprite_templates) > 0:
-                sprite_templates[-1].string = sprite_templates[-1].string.rstrip() + "\n\n" + str(templates)
-            else:
-                find_section(parsed, "Sprites").contents = str(templates)
+        else:
+            if len(char_sprites) - len(skip) > 0:
+                # There are new sprites. Do an incremental update.
+                if len(sprite_templates) > 0:
+                    sprite_templates[-1].string = sprite_templates[-1].string.rstrip() + "\n\n" + str(templates)
+                else:
+                    find_section(parsed, "Sprites").contents = str(templates)
+            force_section_text(parsed, "CGs", text="{{TrekkerCGs}}\n", prepend="Sprites")
             save_page(page, str(parsed), "batch update gallery page")
 
 
