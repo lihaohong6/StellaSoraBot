@@ -329,6 +329,7 @@ def create_gallery_pages():
 
 
 def char_gallery_page():
+    get_char_sprites()
     upload_sprites()
     create_gallery_pages()
 

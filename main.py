@@ -8,16 +8,13 @@ from character_info.char_infobox import update_infobox
 from character_info.char_potential import potential_main
 from character_info.char_profile import update_character_profile
 from character_info.char_skills import skill_main
-from character_info.char_sprites import char_gallery_page
 from character_info.char_stats import update_character_stats
 from character_info.char_story import update_character_stories
 from character_info.private_message import update_private_messages
-from page_generators.cg_uploader import cg_uploader_main
 from page_generators.discs import update_disc_all
 from page_generators.events import save_event_all
 from page_generators.live2d_talent_images import live2d_talent_images_main
 from page_generators.purge_pages import purge_all_pages
-from unpack.unpack_main import export_all_assets
 from utils.data_utils import autoload_all_files
 
 
@@ -31,8 +28,6 @@ def update_character_page():
     potential_main()
     update_character_stories()
     update_private_messages()
-    # Don't update this: need manual overrides
-    # char_gallery_page()
     generate_audio_page()
     update_character_profile()
 
@@ -40,10 +35,8 @@ def update_character_page():
 def main():
     subprocess.run(["git", "pull"], check=True, cwd=Path("./vendor/StellaSoraData"))
     autoload_all_files()
-    # export_all_assets()
     update_character_page()
     save_event_all()
-    cg_uploader_main()
     update_disc_all()
     purge_all_pages()
 
