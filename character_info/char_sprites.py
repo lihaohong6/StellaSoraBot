@@ -292,7 +292,7 @@ def sprites_to_template(char: str, sprites: dict[str, list[Sprite]], skip: set[s
             name = "Default"
         set_arg(t, "name", name)
         result.append(str(t))
-    return "\n\n".join(result) + "\n{{VariantSprites}}"
+    return "\n\n".join(result) + "\n{{VariantSprites}}\n"
 
 
 def create_gallery_pages():

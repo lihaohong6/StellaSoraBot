@@ -305,10 +305,11 @@ def _export_root(
     images: dict[int, ImageNode],
     sprites: dict[int, SpriteInfo],
     output_dir: Path,
+    overwrite: bool = False,
 ) -> Path | None:
     path_name = _safe_name(_node_path(root_id, rects))
     output_path = output_dir / bundle.stem / f"{path_name}.png"
-    if output_path.exists():
+    if output_path.exists() and not overwrite:
         return output_path
 
     root = rects[root_id]
@@ -332,6 +333,7 @@ def _export_sprites_directly(
     sprites: dict[int, SpriteInfo],
     output_dir: Path,
     exclude: set[str] | None = None,
+    overwrite: bool = False,
 ) -> list[Path]:
     written: list[Path] = []
     for sprite in sprites.values():
@@ -341,7 +343,7 @@ def _export_sprites_directly(
         if not sprite.name.startswith("bg_") or width * height < MIN_OUTPUT_AREA:
             continue
         output_path = output_dir / bundle.stem / f"{_safe_name(sprite.name)}.png"
-        if not output_path.exists():
+        if not output_path.exists() or overwrite:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             sprite.image.save(output_path)
         written.append(output_path)
@@ -435,6 +437,7 @@ def _export_legacy_composites(
     rects: dict[int, RectNode],
     sprites: dict[int, SpriteInfo],
     output_dir: Path,
+    overwrite: bool = False,
 ) -> tuple[list[Path], set[str]]:
     """
     For old bundles where Image components can't be read, reconstruct backgrounds
@@ -465,7 +468,7 @@ def _export_legacy_composites(
         return canvas_w, canvas_h
 
     def _write_composite(layers: list[tuple[SpriteInfo, Layout]], canvas_w: float, canvas_h: float, output_path: Path) -> None:
-        if output_path.exists():
+        if output_path.exists() and not overwrite:
             return
         canvas = Image.new("RGBA", (round(canvas_w), round(canvas_h)), (0, 0, 0, 0))
         for sprite, layout in layers:
@@ -560,46 +563,62 @@ def _activity_bundles() -> list[Path]:
     bundles = [
         bundle
         for bundle in get_unity3d_files() + list((data_dir.parent / "OldAssets").glob("*.unity3d"))
-        if bundle.name.startswith("ui_activity")
+        if (bundle.name.startswith("ui_activity") or bundle.name.startswith("ui_play_"))
         and bundle.suffix == ".unity3d"
         and not bundle.name.endswith(".en.unity3d")
     ]
     return sorted(bundles, key=lambda path: path.name)
 
 
-def export_event_images() -> list[Path]:
+def export_event_images(overwrite: bool = False) -> list[Path]:
     output_dir = Path("assets") / "event_bgs"
     output_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
     bundles = _activity_bundles()
     print(f"Processing {len(bundles)} ui_activity bundles...")
     for index, bundle in enumerate(bundles, start=1):
+        bundle_output_dir = output_dir / bundle.stem
+        marker_path = bundle_output_dir / ".processed"
+        if not overwrite and marker_path.exists():
+            written.extend(sorted(bundle_output_dir.glob("*.png")))
+            print(f"[{index}/{len(bundles)}] {bundle.name}: skipped (already processed, use --overwrite to regenerate)")
+            continue
         try:
             rects, _, images, sprites = _read_bundle(bundle)
             roots = _find_roots(rects, images, sprites)
             bundle_written: list[Path] = []
             for root_id in roots:
-                output_path = _export_root(bundle, root_id, rects, images, sprites, output_dir)
+                output_path = _export_root(bundle, root_id, rects, images, sprites, output_dir, overwrite=overwrite)
                 if output_path:
                     bundle_written.append(output_path)
                     written.append(output_path)
             if not bundle_written and not images:
-                composites, used_names = _export_legacy_composites(bundle, rects, sprites, output_dir)
-                leftovers = _export_sprites_directly(bundle, sprites, output_dir, exclude=used_names)
+                composites, used_names = _export_legacy_composites(bundle, rects, sprites, output_dir, overwrite=overwrite)
+                leftovers = _export_sprites_directly(bundle, sprites, output_dir, exclude=used_names, overwrite=overwrite)
                 bundle_written = composites + leftovers
                 written.extend(bundle_written)
             if bundle_written:
                 print(f"[{index}/{len(bundles)}] {bundle.name}: wrote {len(bundle_written)} images")
             else:
                 print(f"[{index}/{len(bundles)}] {bundle.name}: no large backgrounds found")
+            bundle_output_dir.mkdir(parents=True, exist_ok=True)
+            marker_path.touch()
         except Exception as e:
             print(f"WARNING: Failed to process {bundle.name}: {e}")
     print(f"Wrote {len(written)} images to {output_dir}")
     return written
 
 
+def _parse_args() -> Any:
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--overwrite", action="store_true", help="Re-export even if output already exists")
+    return parser.parse_args()
+
+
 def main() -> None:
-    export_event_images()
+    args = _parse_args()
+    export_event_images(overwrite=args.overwrite)
 
 
 if __name__ == "__main__":
