@@ -191,6 +191,15 @@ def _bundle_by_skin_id() -> dict[int, Path]:
     return result
 
 
+def _l2d_bundle_by_skin_id() -> dict[int, Path]:
+    result: dict[int, Path] = {}
+    for file in get_unity3d_files():
+        match = re.fullmatch(r"char_l2d_(\d+)\.unity3d", file.name)
+        if match:
+            result[int(match.group(1))] = file
+    return result
+
+
 def _prefab_roots(objects: dict[int, ObjectReader], skin_id: int) -> dict[str, ObjectReader]:
     roots: dict[str, ObjectReader] = {}
     for obj in objects.values():
@@ -650,6 +659,35 @@ def _remove_stale_model_json(out_dir: Path, skin_id: int, variant: Live2DVariant
         print(f"Removed stale skipped model {model_path}")
 
 
+def _load_existing_result(skin_id: int, variant: Live2DVariant, out_dir: Path) -> Live2DExportResult | None:
+    manifest_path = out_dir / "stella_live2d_manifest.json"
+    if not manifest_path.exists():
+        return None
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    result = Live2DExportResult(skin_id, variant.name, out_dir)
+    result.moc_name = (data.get("moc") or {}).get("name")
+    result.moc_file = (data.get("moc") or {}).get("file")
+    result.texture_files = data.get("textures") or []
+    result.motions = [
+        Live2DMotion(
+            name=motion["name"],
+            file=motion["file"],
+            duration=motion["duration"],
+            fade_in=motion["fade_in"],
+            fade_out=motion["fade_out"],
+            parameter_count=motion["parameter_count"],
+        )
+        for motion in data.get("motions") or []
+    ]
+    result.warnings = data.get("warnings") or []
+    result.skipped = bool(data.get("skipped"))
+    result.skip_reason = data.get("skip_reason")
+    return result
+
+
 def _manifest(result: Live2DExportResult, source_bundle: Path, prefab_container: str) -> dict[str, Any]:
     return {
         "skin_id": result.skin_id,
@@ -702,8 +740,14 @@ def _export_variant(
     prefab_root: ObjectReader,
     output_root: Path,
     read_errors: list[Live2DReadError],
+    overwrite: bool,
 ) -> Live2DExportResult:
     out_dir = output_root / str(skin_id) / "live2d" / variant.name
+    if not overwrite:
+        existing = _load_existing_result(skin_id, variant, out_dir)
+        if existing is not None:
+            print(f"Skipping {skin_id} {variant.name}: already exported (use --overwrite to regenerate).")
+            return existing
     result = Live2DExportResult(skin_id, variant.name, out_dir)
     error_count = len(read_errors)
     game_object_ids = _descendant_game_objects(prefab_root, objects, source_bundle, read_errors)
@@ -777,6 +821,7 @@ def export_live2d(
     skin_ids: set[int] | None = None,
     variants: set[str] | None = None,
     output_root: Path | None = None,
+    overwrite: bool = False,
 ) -> list[Live2DExportResult]:
     selected_variants = variants or DEFAULT_VARIANTS
     unknown_variants = selected_variants - set(VARIANTS)
@@ -785,6 +830,7 @@ def export_live2d(
 
     output_root = output_root or assets_root / "actor2d/character"
     bundles = _bundle_by_skin_id()
+    l2d_bundles = _l2d_bundle_by_skin_id()
     if skin_ids is not None:
         missing = sorted(skin_ids - set(bundles))
         for skin_id in missing:
@@ -794,9 +840,25 @@ def export_live2d(
     results: list[Live2DExportResult] = []
     read_errors: list[Live2DReadError] = []
     for skin_id, source_bundle in sorted(bundles.items()):
+        if not overwrite:
+            existing_results = [
+                _load_existing_result(skin_id, VARIANTS[variant_name], output_root / str(skin_id) / "live2d" / variant_name)
+                for variant_name in sorted(selected_variants)
+            ]
+            if all(existing is not None for existing in existing_results):
+                print(f"Skipping {source_bundle.name}: all variants already exported (use --overwrite to regenerate).")
+                results.extend(existing_results)
+                continue
+
         print(f"Processing {source_bundle.name}")
         env = UnityPy.load(str(source_bundle))
         objects = {obj.path_id: obj for obj in env.objects}
+        l2d_bundle = l2d_bundles.get(skin_id)
+        if l2d_bundle is None:
+            print(f"WARNING: No char_l2d bundle found for skin {skin_id}")
+        else:
+            l2d_env = UnityPy.load(str(l2d_bundle))
+            objects.update({obj.path_id: obj for obj in l2d_env.objects})
         scripts = _script_names(objects, source_bundle, read_errors)
         prefabs = _prefab_roots(objects, skin_id)
         for variant_name in sorted(selected_variants):
@@ -813,6 +875,7 @@ def export_live2d(
                 prefab_root,
                 output_root,
                 read_errors,
+                overwrite,
             ))
     if read_errors:
         formatted_errors = _unique_read_error_formats(read_errors)
@@ -827,6 +890,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--skin-id", type=int, action="append", dest="skin_ids")
     parser.add_argument("--variant", choices=sorted(VARIANTS), action="append", dest="variants")
     parser.add_argument("--out", type=Path, default=None)
+    parser.add_argument("--overwrite", action="store_true", help="Re-export even if output already exists")
     return parser.parse_args()
 
 
@@ -834,7 +898,7 @@ def main() -> None:
     args = _parse_args()
     skin_ids = set(args.skin_ids) if args.skin_ids else None
     variants = set(args.variants) if args.variants else None
-    results = export_live2d(skin_ids=skin_ids, variants=variants, output_root=args.out)
+    results = export_live2d(skin_ids=skin_ids, variants=variants, output_root=args.out, overwrite=args.overwrite)
     exported = sum(1 for result in results if result.moc_file)
     print(f"Exported {exported} Live2D variants.")
 
