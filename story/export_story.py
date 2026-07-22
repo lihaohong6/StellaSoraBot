@@ -488,7 +488,8 @@ def export_bgm_files(episodes: dict[str, StoryEpisode]) -> None:
                     bgm_files.add(bgm_file)
     upload_requests = []
     for bgm in sorted(bgm_files):
-        assert bgm.startswith("m")
+        if not bgm.startswith("m"):
+            print(f"WARNING: unrecognized bgm name: {bgm}")
         try:
             path = get_bgm_path(bgm)
         except KeyError:
