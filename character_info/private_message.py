@@ -165,7 +165,12 @@ def parse_private_messages(char: Character, data: list[dict[str, Any]]) -> Chara
 
 
 def conversation_to_template(conversation: MessengerConversation) -> str:
-    result = ["{{Messenger\n"]
+    result = ["{{Messenger",
+              "",
+              "| config",
+              "| columns :: 3",
+              "| default-image-right :: Female tyrant head.png\n",
+    ]
     for row in conversation.rows:
         name = row.name
         result.append("| " + name)
