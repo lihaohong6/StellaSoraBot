@@ -8,7 +8,6 @@ from typing import Any
 
 from page_generators.items import get_all_items
 from utils.data_utils import assets_root, autoload
-from utils.upload_utils import UploadRequest, process_uploads
 from utils.wiki_utils import PageCreationRequest, process_page_creation_requests, save_json_page
 
 WIKI_TIMEZONE = timezone(timedelta(hours=-7))
@@ -17,6 +16,7 @@ EVENT_PAGE_TITLES = {
     10100: "Daring Adventure! The Ghost Ship Haunts the Deep/2025-10-27",
     10101: "Guild Sweet Guild (event)",
     10102: "Beyond the Dream (event)",
+    20103: "Sunlit Breeze, Azure Seas, Checking In for A Cozy Summer~",
 }
 
 @dataclass
@@ -336,11 +336,9 @@ def _period_text(event: Event) -> str:
     )
 
 
-def _event_page_title(event: Event, duplicate_names: set[str]) -> str:
+def _event_page_title(event: Event) -> str:
     if event.id in EVENT_PAGE_TITLES:
         return EVENT_PAGE_TITLES[event.id]
-    if event.name in duplicate_names:
-        return f"{event.name}/{_wiki_date(_event_start_dt(event))}"
     return event.name
 
 
@@ -442,7 +440,7 @@ def get_event_pages() -> dict[int, EventPage]:
             continue
         pages[event.id] = EventPage(
             event=event,
-            page_title=_event_page_title(event, set()),
+            page_title=_event_page_title(event),
             image=_event_image_name(event),
             image_path=None,
             requirement_level=_event_requirement_level(row),

@@ -7,7 +7,7 @@ from typing import Any
 from pywikibot import Page
 from wikitextparser import parse
 
-from page_generators.events import get_all_events
+from page_generators.events import get_all_events, get_event_pages
 from story.export_story import (
     episode_to_messenger_template,
     export_bgm_files,
@@ -28,6 +28,7 @@ from utils.wiki_utils import force_section_text, save_page, s
 
 @dataclass
 class EventStoryEntry:
+    event_id: int
     event_name: str
     page_title: str
     act_title: str
@@ -103,6 +104,7 @@ def get_event_story_entries() -> list[EventStoryEntry]:
             seen_pages.add(page_title)
             entries.append(
                 EventStoryEntry(
+                    event_id=event_id,
                     event_name=event.name,
                     page_title=page_title,
                     act_title=act_title,
@@ -237,9 +239,11 @@ def build_event_story_section(
 
 def build_event_story_sections() -> dict[str, str]:
     episodes = get_event_story_episodes()
+    event_pages = get_event_pages()
     event_entries: dict[str, list[EventStoryEntry]] = {}
     for entry in get_event_story_entries():
-        event_entries.setdefault(entry.event_name, []).append(entry)
+        wiki_name = event_pages[entry.event_id].page_title if entry.event_id in event_pages else entry.event_name
+        event_entries.setdefault(wiki_name, []).append(entry)
     return {
         event_name: build_event_story_section(entries, episodes)
         for event_name, entries in event_entries.items()
