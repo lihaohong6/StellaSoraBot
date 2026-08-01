@@ -258,7 +258,7 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
                 StoryRow(
                     "front_object",
                     {
-                        "image": image_name,
+                        "image": image_name.lower(),
                         "position": position,
                         "scale": str(params[5]),
                     },
