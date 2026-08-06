@@ -3,6 +3,7 @@ from unpack.unpack_event_images import export_event_images
 from unpack.unpack_image import export_images
 from unpack.unpack_live2d import export_live2d
 from unpack.unpack_lua import export_lua
+from unpack.unpack_model import export_3d_models
 from unpack.unpack_paths import data_dir, unity_asset_dir_1, text_dir
 
 for _required in (data_dir, unity_asset_dir_1, text_dir):
@@ -21,6 +22,7 @@ def export_all_assets():
     export_disc_txtp()
     export_live2d()
     export_event_images()
+    export_3d_models()
 
 
 def main():

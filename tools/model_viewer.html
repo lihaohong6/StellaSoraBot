@@ -1,0 +1,935 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stella Sora — 3D Model Viewer (POC)</title>
+<style>
+  :root {
+    --bg: #14161c; --panel: rgba(22, 25, 33, .92); --line: #2b3040;
+    --text: #dfe3ec; --muted: #8b93a7; --accent: #7cc4ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg);
+    color: var(--text); font: 13px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  #stage { position: fixed; inset: 0; }
+  #panel {
+    position: fixed; top: 12px; left: 12px; width: 288px; max-height: calc(100dvh - 24px);
+    display: flex; flex-direction: column; padding: 12px;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: var(--panel); backdrop-filter: blur(8px);
+  }
+  /* Header stays put so the model picker never scrolls out of reach. */
+  #panel > header { flex: none; }
+  #panel > .scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    margin: 0 -12px -12px; padding: 0 12px 12px; }
+  #panel h1 { margin: 0 0 1px; font-size: 14px; letter-spacing: .01em; }
+  #panel .sub { margin: 0 0 7px; color: var(--muted); font-size: 11px; }
+  details { border-top: 1px solid var(--line); margin-top: 5px; }
+  summary { display: flex; justify-content: space-between; cursor: pointer;
+    padding: 5px 0 1px; color: var(--muted); font-size: 11px;
+    text-transform: uppercase; letter-spacing: .06em; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: '–'; }
+  details:not([open]) summary::after { content: '+'; }
+  label.row { display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; margin: 3px 0; }
+  label.row > span { color: var(--muted); }
+  label.row > output { min-width: 40px; text-align: right; font-variant-numeric: tabular-nums;
+    color: var(--accent); }
+  .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; font-size: 12px; }
+  input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  input[type=checkbox] { accent-color: var(--accent); }
+  input[type=color] { width: 44px; height: 20px; padding: 0; border: 1px solid var(--line);
+    background: none; }
+  select, button { width: 100%; padding: 5px 8px; border-radius: 6px;
+    border: 1px solid var(--line); background: #1b1f29; color: var(--text); font: inherit; }
+  button { cursor: pointer; margin-top: 6px; }
+  button:hover { border-color: var(--accent); }
+  .transport { display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; }
+  .transport button { flex: none; width: 30px; margin: 0; padding: 3px 0; text-align: center; }
+  .transport output { flex: none; min-width: 78px; text-align: right; font-size: 11px;
+    color: var(--accent); font-variant-numeric: tabular-nums; }
+  #animStatus { font-style: normal; color: var(--accent); }
+  /* Too narrow to sit beside the model: dock the panel to the bottom instead. */
+  @media (max-width: 719px) {
+    #panel { top: auto; bottom: 12px; right: 12px; width: auto; max-height: 42dvh; }
+    .checks { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+    #stats { top: 12px; bottom: auto; }
+  }
+  #stats { position: fixed; right: 12px; bottom: 12px; color: var(--muted);
+    font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+  #msg { position: fixed; inset: 0; display: grid; place-items: center;
+    pointer-events: none; color: var(--muted); }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<div id="msg">loading…</div>
+<div id="panel">
+  <header>
+    <h1>Stella Sora model viewer</h1>
+    <p class="sub">POC — <code>Game/Actor/Toon</code> in three.js</p>
+    <select id="model"></select>
+  </header>
+
+  <div class="scroll">
+    <details open id="animBox" hidden>
+      <summary><span>Animation <i id="animStatus"></i></span></summary>
+      <select id="clip"></select>
+      <div class="transport">
+        <button id="play" title="Play / pause" disabled>▶</button>
+        <input type="range" id="scrub" min="0" max="1000" value="0" disabled>
+        <output id="clock">0.00 / 0.00 s</output>
+      </div>
+      <label class="row"><span>Speed</span><input type="range" id="speed" min="0" max="200" value="100"><output></output></label>
+    </details>
+
+    <details open id="lightBox">
+      <summary>Light</summary>
+      <label class="row"><span>Azimuth</span><input type="range" id="azimuth" min="-180" max="180" value="35"><output></output></label>
+      <label class="row"><span>Elevation</span><input type="range" id="elevation" min="-89" max="89" value="28"><output></output></label>
+      <label class="row"><span>Intensity</span><input type="range" id="intensity" min="0" max="200" value="100"><output></output></label>
+      <div class="checks">
+        <label class="row"><span>Follow camera</span><input type="checkbox" id="lightFollow"></label>
+      </div>
+    </details>
+
+    <details open id="toonBox">
+      <summary>Toon</summary>
+      <label class="row"><span>Shadow depth</span><input type="range" id="shadowDepth" min="10" max="140" value="35"><output></output></label>
+      <label class="row"><span>Shadow bias</span><input type="range" id="attenScale" min="0" max="300" value="100"><output></output></label>
+      <label class="row"><span>Rim strength</span><input type="range" id="rimScale" min="0" max="300" value="100"><output></output></label>
+      <label class="row"><span>Specular</span><input type="range" id="specScale" min="0" max="300" value="100"><output></output></label>
+      <label class="row"><span>Emission</span><input type="range" id="emitScale" min="0" max="300" value="100"><output></output></label>
+      <div class="checks">
+        <label class="row"><span>MatCap</span><input type="checkbox" id="matcap" checked></label>
+        <label class="row"><span>Face shadow</span><input type="checkbox" id="faceSdf" checked></label>
+      </div>
+    </details>
+
+    <details open id="outlineBox">
+      <summary>Outline</summary>
+      <label class="row"><span>Width</span><input type="range" id="outlineWidth" min="0" max="400" value="100"><output></output></label>
+      <div class="checks">
+        <label class="row"><span>Enabled</span><input type="checkbox" id="outline" checked></label>
+      </div>
+    </details>
+
+    <details open>
+      <summary>View</summary>
+      <select id="mode">
+        <option value="toon">Toon (shader)</option>
+        <option value="base">Base colour only</option>
+        <option value="ramp">Light ramp</option>
+        <option value="normal">Normals</option>
+        <option value="mask">Mask map (R/G/B)</option>
+      </select>
+      <div class="checks">
+        <label class="row"><span>Brows over hair</span><input type="checkbox" id="browOver" checked></label>
+        <label class="row"><span>Expressions</span><input type="checkbox" id="emotes"></label>
+        <label class="row"><span>Auto-rotate</span><input type="checkbox" id="spin"></label>
+        <label class="row"><span>Skeleton</span><input type="checkbox" id="skeleton"></label>
+        <label class="row"><span>Background</span><input type="color" id="bg" value="#14161c"></label>
+      </div>
+      <button id="reset">Reset camera</button>
+    </details>
+  </div>
+</div>
+<div id="stats"></div>
+
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/"
+} }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// Written by unpack/unpack_model.py; serve the repo root, not this directory.
+const MODELS = '../assets/assetbundles/actor3d/';
+
+/* ------------------------------------------------------------------ shaders */
+
+const TOON_VERT = /* glsl */`
+#include <common>
+#include <skinning_pars_vertex>
+
+varying vec2 vUv;
+varying vec3 vNormalW;
+varying vec3 vViewW;
+
+void main() {
+  vUv = uv;
+  vec3 objectNormal = normal;
+  #include <skinbase_vertex>
+  #include <skinnormal_vertex>
+  vec3 transformed = position;
+  #include <skinning_vertex>
+
+  vec4 worldPosition = modelMatrix * vec4(transformed, 1.0);
+  vNormalW = normalize(mat3(modelMatrix) * objectNormal);
+  vViewW = cameraPosition - worldPosition.xyz;
+  gl_Position = projectionMatrix * viewMatrix * worldPosition;
+}`;
+
+// Reimplementation of Game/Actor/Toon. Channel semantics come from the shader's
+// own property descriptions in shader.unity3d:
+//   _BaseMap  Base Color (RGB) Alpha (A)
+//   _MaskMap  Light Attenuation Adjust (R) MatCap Mask (G) Rim Mask (B)
+//   _SpecularMap  Specular Color (RGB)
+//   _EmissionMap  Emission Map (RGB) Animation Mask (A)
+const TOON_FRAG = /* glsl */`
+precision highp float;
+
+uniform sampler2D baseMap, maskMap, specularMap, matcapMap, emissionMap;
+uniform bool hasMask, hasSpecular, hasMatcap, hasEmission;
+
+uniform vec3 lightDirection, lightColor;
+uniform float lightIntensity;
+
+uniform vec4 baseColor;
+uniform vec3 highlightColor, shadowColor;
+uniform vec3 mainLightDirScale;
+uniform float rampThreshold, rampSmoothing, attenAdjust, attenScale, shadowDepth;
+
+uniform float specularMode, specularIntensity, specularSmoothness;
+uniform float stylizedSpecThreshold, stylizedSpecSmoothing, specScale;
+uniform vec3 specularHighlightColor, specularShadowColor;
+
+uniform float rimMode, rimThreshold, rimSmooth, rimWidth, rimScale;
+uniform vec3 rimHighlightColor, rimShadowColor;
+
+uniform float enableMatcap, matcapSmoothness;
+uniform vec3 matcapColor;
+
+uniform float enableEmission, emitScale;
+uniform vec3 emissionColor;
+
+uniform float alphaTestOn, alphaCutoff, flipBackFaceNormal;
+uniform vec4 backFaceTint;
+uniform float charSurface, faceSdfOn;
+uniform vec3 headForward, headRight;
+uniform int debugMode;
+
+varying vec2 vUv;
+varying vec3 vNormalW;
+varying vec3 vViewW;
+
+void main() {
+  vec4 base = texture2D(baseMap, vUv) * baseColor;
+  if (alphaTestOn > 0.5 && base.a < alphaCutoff) discard;
+
+  vec3 N = normalize(vNormalW);
+  if (!gl_FrontFacing) {
+    if (flipBackFaceNormal > 0.5) N = -N;
+    base.rgb = mix(base.rgb, base.rgb * backFaceTint.rgb, backFaceTint.a);
+  }
+  vec3 V = normalize(vViewW);
+
+  vec3 mask = hasMask ? texture2D(maskMap, vUv).rgb : vec3(0.5, 1.0, 1.0);
+
+  // _MainLightDirScale flattens the light per material; the face uses (0,1,0)
+  // so it stays lit from above no matter which way the character turns.
+  vec3 scaled = lightDirection * mainLightDirScale;
+  vec3 L = length(scaled) > 1e-4 ? normalize(scaled) : normalize(lightDirection);
+
+  float halfLambert = dot(N, L) * 0.5 + 0.5;
+  float ramp;
+
+  if (charSurface > 2.5 && hasMask && faceSdfOn > 0.5) {
+    // Face: _MaskMap R is a face-shadow lightmap (Avatar_*_Face_*_Lightmap), not
+    // an attenuation offset. Each texel stores the horizontal light angle at
+    // which it drops into shadow; the map is authored for one side and mirrored
+    // in U when the key light crosses to the other.
+    vec2 flat2 = normalize(vec2(lightDirection.x, lightDirection.z) + 1e-6);
+    float front = dot(normalize(headForward.xz), flat2);
+    float side = dot(normalize(headRight.xz), flat2);
+    vec2 sdfUv = vec2(side > 0.0 ? 1.0 - vUv.x : vUv.x, vUv.y);
+    float sdf = texture2D(maskMap, sdfUv).r;
+    float threshold = 1.0 - (front * 0.5 + 0.5);
+    // Texels outside the authored face island read 0; fall back to plain
+    // half-lambert there instead of forcing them into shadow.
+    ramp = sdf < 0.01
+      ? smoothstep(rampThreshold - rampSmoothing - 1e-4,
+                   rampThreshold + rampSmoothing + 1e-4, halfLambert)
+      : smoothstep(threshold - 0.015, threshold + 0.015, sdf);
+  } else {
+    // Body: _MaskMap R sits at ~0.5 (neutral) and drops to 0 in creases that
+    // should stay shaded, so it biases the ramp rather than replacing it.
+    float maskR = (charSurface > 2.5) ? 0.5 : mask.r;
+    float atten = halfLambert + (maskR - 0.5) * attenAdjust * attenScale;
+    ramp = smoothstep(rampThreshold - rampSmoothing - 1e-4,
+                      rampThreshold + rampSmoothing + 1e-4, atten);
+  }
+
+  if (debugMode != 0) {
+    vec3 debug = debugMode == 1 ? base.rgb
+               : debugMode == 2 ? vec3(ramp)
+               : debugMode == 3 ? N * 0.5 + 0.5
+               : (hasMask ? mask : vec3(0.0));
+    gl_FragColor = vec4(debug, base.a);
+    #include <colorspace_fragment>
+    return;
+  }
+
+  // The materials ship near-white _ShadowColor (0.93-0.96); in game the contrast
+  // comes from the scene light rig, which is not in the character bundles.
+  // shadowDepth = 1.0 reproduces the material exactly, lower deepens the shading.
+  vec3 lit = lightColor * lightIntensity;
+  vec3 color = base.rgb * mix(shadowColor * shadowDepth, highlightColor, ramp) * lit;
+
+  vec3 H = normalize(L + V);
+  float power = exp2(specularSmoothness * 9.0 + 1.0);
+  float spec = pow(max(dot(N, H), 0.0), power);
+  if (specularMode > 0.5) {
+    spec = smoothstep(stylizedSpecThreshold - stylizedSpecSmoothing - 1e-4,
+                      stylizedSpecThreshold + stylizedSpecSmoothing + 1e-4, spec);
+  }
+  vec3 specTint = hasSpecular ? texture2D(specularMap, vUv).rgb : vec3(1.0);
+  color += spec * specTint * specularIntensity * specScale
+           * mix(specularShadowColor, specularHighlightColor, ramp) * lit;
+
+  if (rimMode > 0.5) {
+    float fresnel = 1.0 - clamp(dot(N, V), 0.0, 1.0);
+    float edge = clamp(1.0 - rimWidth * 4.0, 0.0, 0.99);
+    float rim = smoothstep(edge - rimSmooth * 0.5, edge + rimSmooth * 0.5, fresnel);
+    color += rim * mask.b * rimScale * mix(rimShadowColor, rimHighlightColor, ramp);
+  }
+
+  if (enableMatcap > 0.5 && hasMatcap) {
+    vec3 nv = normalize((viewMatrix * vec4(N, 0.0)).xyz);
+    vec2 muv = nv.xy * 0.5 * matcapSmoothness + 0.5;
+    color += texture2D(matcapMap, muv).rgb * matcapColor * mask.g;
+  }
+
+  if (enableEmission > 0.5 && hasEmission) {
+    color += texture2D(emissionMap, vUv).rgb * emissionColor * emitScale;
+  }
+
+  gl_FragColor = vec4(color, base.a);
+  // ShaderMaterial does not get the output-colour-space conversion for free.
+  #include <colorspace_fragment>
+}`;
+
+// Inverted-hull outline. Toony Colors Pro bakes a smoothed normal into the
+// mesh tangent (exported as _SMOOTHNORMAL) so hard edges do not split the hull.
+const OUTLINE_VERT = /* glsl */`
+#include <common>
+#include <skinning_pars_vertex>
+
+attribute vec3 smoothNormal;
+uniform float outlineWidth;
+
+void main() {
+  vec3 objectNormal = smoothNormal;
+  #include <skinbase_vertex>
+  #include <skinnormal_vertex>
+  vec3 transformed = position;
+  #include <skinning_vertex>
+
+  vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
+  vec3 viewNormal = normalize(normalMatrix * objectNormal);
+  #ifdef USE_COLOR_ALPHA
+    float widthMask = color.a;
+  #else
+    float widthMask = 1.0;
+  #endif
+  mvPosition.xyz += viewNormal * outlineWidth * widthMask * max(-mvPosition.z, 0.05);
+  gl_Position = projectionMatrix * mvPosition;
+}`;
+
+const OUTLINE_FRAG = /* glsl */`
+precision highp float;
+uniform vec3 outlineColor;
+void main() {
+  gl_FragColor = vec4(outlineColor, 1.0);
+  #include <colorspace_fragment>
+}`;
+
+/* -------------------------------------------------------------------- scene */
+
+const canvas = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.NoToneMapping;   // toon shading is authored for none
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x14161c);
+
+const camera = new THREE.PerspectiveCamera(30, 1, 0.01, 100);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+const grid = new THREE.GridHelper(4, 16, 0x2b3040, 0x21252f);
+grid.material.transparent = true;
+grid.material.opacity = 0.45;
+scene.add(grid);
+
+const ui = id => document.getElementById(id);
+const state = {
+  materials: [], outlines: [], skeletons: [], model: null,
+  lightDirection: new THREE.Vector3(),
+  clips: [], clipCache: new Map(), mixer: null, action: null,
+  playing: true, animToken: 0, rest: [], head: null,
+};
+
+// Unity serialises LDR material colours gamma-encoded and converts on upload in a
+// linear project; HDR colours (any component > 1) are already linear.
+function linear(rgba) {
+  const hdr = rgba[0] > 1 || rgba[1] > 1 || rgba[2] > 1;
+  return new THREE.Color().setRGB(rgba[0], rgba[1], rgba[2],
+    hdr ? THREE.LinearSRGBColorSpace : THREE.SRGBColorSpace);
+}
+
+function buildToonMaterial(source, textures, extras) {
+  const f = extras.floats || {}, c = extras.colors || {}, t = extras.textures || {};
+  const num = (k, d) => (f[k] === undefined ? d : f[k]);
+  const col = (k, d) => linear(c[k] || d);
+  const tex = k => (t[k] === undefined ? null : textures[t[k]]);
+
+  const white = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+  white.needsUpdate = true;
+
+  const uniforms = {
+    baseMap: { value: tex('_BaseMap') || white },
+    maskMap: { value: tex('_MaskMap') || white },
+    specularMap: { value: tex('_SpecularMap') || white },
+    matcapMap: { value: tex('_MatCapMap') || white },
+    emissionMap: { value: tex('_EmissionMap') || white },
+    hasMask: { value: !!tex('_MaskMap') },
+    hasSpecular: { value: !!tex('_SpecularMap') },
+    hasMatcap: { value: !!tex('_MatCapMap') },
+    hasEmission: { value: !!tex('_EmissionMap') },
+
+    lightDirection: { value: state.lightDirection },
+    lightColor: { value: new THREE.Color(1, 1, 1) },
+    lightIntensity: { value: 1 },
+
+    baseColor: { value: new THREE.Vector4(...(c._BaseColor || [1, 1, 1, 1])) },
+    highlightColor: { value: col('_HighlightColor', [1, 1, 1, 1]) },
+    shadowColor: { value: col('_ShadowColor', [.8, .8, .8, 1]) },
+    mainLightDirScale: {
+      value: new THREE.Vector3(...(c._MainLightDirScale || [1, 1, 1, 0]).slice(0, 3)) },
+    rampThreshold: { value: num('_RampThreshold', 0.5) },
+    rampSmoothing: { value: num('_RampSmoothing', 0.05) },
+    attenAdjust: { value: num('_AttenAdjustCorrection', 1) },
+    attenScale: { value: 1 },
+    shadowDepth: { value: 1 },
+
+    specularMode: { value: num('_Specular_Mode', 0) },
+    specularIntensity: { value: num('_SpecularIntensity', 1) },
+    specularSmoothness: { value: num('_SpecularSmoothness', 1) },
+    stylizedSpecThreshold: { value: num('_StylizedSpecularThreshold', 0.5) },
+    stylizedSpecSmoothing: { value: num('_StylizedSpecularSmoothing', 0.1) },
+    specScale: { value: 1 },
+    specularHighlightColor: { value: col('_SpecularHighlightColor', [1, 1, 1, 1]) },
+    specularShadowColor: { value: col('_SpecularShadowColor', [0, 0, 0, 1]) },
+
+    rimMode: { value: num('_Rim_Lighting_Mode', 1) },
+    rimThreshold: { value: num('_RimLightingThreshold', 0.5) },
+    rimSmooth: { value: num('_RimLightingSmooth', 0.3) },
+    rimWidth: { value: num('_RimLightingWidth', 0.06) },
+    rimScale: { value: 1 },
+    rimHighlightColor: { value: col('_RimLightingHighlightColor', [0, 0, 0, 1]) },
+    rimShadowColor: { value: col('_RimLightingShadowColor', [0, 0, 0, 1]) },
+
+    enableMatcap: { value: num('_Enable_MatCap', 0) },
+    matcapSmoothness: { value: num('_MatCapMapSmoothness', 1) },
+    matcapColor: { value: col('_MatCapColor', [1, 1, 1, 1]) },
+
+    enableEmission: { value: num('_Enable_EmissionMap', 0) },
+    emitScale: { value: 1 },
+    emissionColor: { value: col('_EmissionColor', [0, 0, 0, 1]) },
+
+    alphaTestOn: { value: num('_Enable_Alpha_Test', 0) },
+    alphaCutoff: { value: num('_AlphaCutoff', 0.5) },
+    flipBackFaceNormal: { value: num('_FlipBackFaceNormal', 0) },
+    backFaceTint: { value: new THREE.Vector4(...(c._BackFaceTintColor || [1, 1, 1, 0])) },
+    charSurface: { value: num('_CharSurface', 0) },
+    faceSdfOn: { value: 1 },
+    headForward: { value: new THREE.Vector3(0, 0, 1) },
+    headRight: { value: new THREE.Vector3(1, 0, 0) },
+    debugMode: { value: 0 },
+  };
+
+  const material = new THREE.ShaderMaterial({
+    uniforms, vertexShader: TOON_VERT, fragmentShader: TOON_FRAG,
+    vertexColors: true,
+    side: num('_Cull', 2) === 0 ? THREE.DoubleSide : THREE.FrontSide,
+    transparent: num('_Surface', 0) > 0.5,
+  });
+  material.name = source.name || 'toon';
+  material.userData.charSurface = num('_CharSurface', 0);
+  material.userData.outlineColor = col('_OutlineColor', [0, 0, 0, 1]);
+  material.userData.outlineWidth = num('_OutlineWidth', 1);
+  material.userData.matcapFlag = num('_Enable_MatCap', 0);
+  return material;
+}
+
+function buildOutlineMaterial(toon) {
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      outlineColor: { value: toon.userData.outlineColor },
+      outlineWidth: { value: 0 },
+    },
+    vertexShader: OUTLINE_VERT, fragmentShader: OUTLINE_FRAG,
+    vertexColors: true, side: THREE.BackSide,
+  });
+  material.userData.baseWidth = toon.userData.outlineWidth * 0.002;
+  return material;
+}
+
+/* --------------------------------------------------------------------- load */
+
+const loader = new GLTFLoader();
+
+async function loadModel(url) {
+  if (state.model) {
+    stopAnimation();
+    scene.remove(state.model);
+    state.model.traverse(o => {
+      if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); }
+    });
+  }
+  state.materials = []; state.outlines = []; state.skeletons = [];
+
+  const gltf = await loader.loadAsync(url);
+  const parser = gltf.parser;
+  const json = parser.json;
+
+  const used = new Set();
+  for (const m of json.materials || []) {
+    for (const i of Object.values(m.extras?.textures || {})) used.add(i);
+  }
+  const textures = {};
+  await Promise.all([...used].map(async i => {
+    const texture = await parser.getDependency('texture', i);
+    const srgb = (json.materials || []).some(m => (m.extras?.srgb || []).includes(i));
+    texture.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    texture.needsUpdate = true;
+    textures[i] = texture;
+  }));
+
+  const root = gltf.scene;
+  let triangles = 0;
+  const meshes = [];
+  root.traverse(o => { if (o.isMesh) meshes.push(o); });
+
+  for (const mesh of meshes) {
+    const extras = mesh.material?.userData || {};
+    if (!extras.floats) continue;
+
+    const geometry = mesh.geometry;
+    if (geometry.attributes._smoothnormal) {
+      geometry.setAttribute('smoothNormal', geometry.attributes._smoothnormal);
+    } else {
+      geometry.setAttribute('smoothNormal', geometry.attributes.normal);
+    }
+    if (!geometry.attributes.color) {
+      const n = geometry.attributes.position.count;
+      geometry.setAttribute('color',
+        new THREE.BufferAttribute(new Float32Array(n * 4).fill(1), 4));
+    }
+    triangles += (geometry.index ? geometry.index.count : 0) / 3;
+
+    const toon = buildToonMaterial(mesh.material, textures, extras);
+    mesh.material = toon;
+    mesh.frustumCulled = false;
+    state.materials.push(toon);
+
+    if (toon.userData.charSurface === 1) {   // eyebrow: drawn over hair in game
+      mesh.renderOrder = 20;
+    }
+    // face11_sp01 etc. are expression overlay quads the game swaps in at runtime.
+    mesh.userData.isEmoteOverlay = /_sp\d|emote/i.test(`${mesh.name} ${toon.name}`);
+
+    // Faces get no inverted hull in game: at head scale the shell swallows the
+    // nose and mouth. Their linework comes from the diffuse texture instead.
+    if (mesh.userData.isEmoteOverlay || toon.userData.charSurface === 1
+        || toon.userData.charSurface === 3) continue;
+
+    const outline = mesh.isSkinnedMesh
+      ? new THREE.SkinnedMesh(geometry, buildOutlineMaterial(toon))
+      : new THREE.Mesh(geometry, buildOutlineMaterial(toon));
+    if (mesh.isSkinnedMesh) {
+      outline.bind(mesh.skeleton, mesh.bindMatrix);
+      state.skeletons.push(mesh.skeleton);
+    }
+    outline.frustumCulled = false;
+    outline.renderOrder = -1;
+    mesh.parent.add(outline);
+    state.outlines.push(outline);
+  }
+
+  scene.add(root);
+  state.model = root;
+  captureRestPose(root);
+  await loadClipList(url);
+
+  const box = new THREE.Box3().setFromObject(root);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  grid.position.y = box.min.y;
+  grid.scale.setScalar(Math.max(1, size.y / 1.6));
+  state.bounds = { center, size };
+  frameModel(false);
+
+  document.getElementById('stats').textContent =
+    `${meshes.length} meshes · ${triangles.toLocaleString()} tris · ` +
+    `${state.materials.length} materials · ${Object.keys(textures).length} textures`;
+  document.getElementById('msg').style.display = 'none';
+  applyUi();
+}
+
+/* ---------------------------------------------------------------- animation */
+
+// A clip only carries tracks for the bones it actually moves, so the pose left
+// behind by the previous clip has to be wiped rather than animated away.
+function captureRestPose(root) {
+  state.rest = [];
+  root.traverse(o => state.rest.push(
+    [o, o.position.clone(), o.quaternion.clone(), o.scale.clone()]));
+  const head = root.getObjectByName('Bip001_Head');
+  state.head = head ? { bone: head, rest: worldQuaternion(head).invert() } : null;
+}
+
+function restoreRestPose() {
+  for (const [object, position, quaternion, scale] of state.rest) {
+    object.position.copy(position);
+    object.quaternion.copy(quaternion);
+    object.scale.copy(scale);
+  }
+}
+
+function worldQuaternion(object) {
+  return object.getWorldQuaternion(new THREE.Quaternion());
+}
+
+// The face shadow is authored against the head's own axes; while the head turns
+// they have to follow it or the shading stays welded to the body's facing.
+function updateHeadAxes() {
+  if (!state.head) return;
+  const turn = worldQuaternion(state.head.bone).multiply(state.head.rest);
+  const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(turn);
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(turn);
+  for (const m of state.materials) {
+    m.uniforms.headForward.value.copy(forward);
+    m.uniforms.headRight.value.copy(right);
+  }
+}
+
+async function loadClipList(modelUrl) {
+  state.clips = [];
+  try {
+    const response = await fetch(modelUrl.replace(/\.glb$/, '.anims.json'));
+    if (response.ok) state.clips = (await response.json()).clips || [];
+  } catch { /* animations are exported separately and may be absent */ }
+
+  ui('animBox').hidden = !state.clips.length;
+  ui('clip').innerHTML = ['<option value="">Bind pose — no animation</option>']
+    .concat(state.clips.map((c, i) =>
+      `<option value="${i}">${c.name} · ${c.duration.toFixed(2)}s</option>`)).join('');
+  fitPanel();
+
+  // Idle is how the character reads in game, so open on it rather than on the
+  // bind pose. Not awaited: the model is already usable without the clip.
+  const idle = state.clips.findIndex(c => /_idle$/i.test(c.name));
+  if (idle >= 0) {
+    ui('clip').value = String(idle);
+    playClip(idle).catch(reportError);
+  }
+}
+
+// A short window plus the animation section is more than the panel holds. Fold
+// the sections least likely to be in use — never unfold, so a section the user
+// opened stays open even if that means scrolling.
+function fitPanel() {
+  const scroll = document.querySelector('#panel > .scroll');
+  for (const id of ['outlineBox', 'toonBox', 'lightBox']) {
+    if (scroll.scrollHeight <= scroll.clientHeight + 1) return;
+    ui(id).open = false;
+  }
+}
+
+function stopAnimation() {
+  state.animToken++;
+  if (state.mixer) {
+    state.mixer.stopAllAction();
+    state.mixer.uncacheRoot(state.model);
+  }
+  state.mixer = null;
+  state.action = null;
+  if (state.rest.length) restoreRestPose();
+  ui('scrub').value = 0;
+  ui('animStatus').textContent = '';
+  setPlaying(false);
+  updateClock();
+}
+
+async function playClip(index) {
+  stopAnimation();
+  const entry = state.clips[index];
+  if (!entry) return;
+
+  const token = state.animToken;
+  let clip = state.clipCache.get(entry.file);
+  if (!clip) {
+    ui('animStatus').textContent = '· loading…';
+    const gltf = await loader.loadAsync(MODELS + entry.file);
+    clip = gltf.animations[0];
+    state.clipCache.set(entry.file, clip);
+  }
+  // The user may have moved on to another clip, or another model, while that
+  // was in flight.
+  if (token !== state.animToken || !clip) return;
+
+  ui('animStatus').textContent = '';
+  state.mixer = new THREE.AnimationMixer(state.model);
+  state.action = state.mixer.clipAction(clip);
+  state.action.play();
+  setPlaying(true);
+  state.mixer.update(0);
+  updateHeadAxes();
+}
+
+function setPlaying(playing) {
+  state.playing = playing;
+  ui('play').textContent = playing ? '❚❚' : '▶';
+  ui('play').disabled = ui('scrub').disabled = !state.action;
+}
+
+function updateClock() {
+  const duration = state.action ? state.action.getClip().duration : 0;
+  const time = duration ? state.action.time % duration : 0;
+  ui('clock').textContent = `${time.toFixed(2)} / ${duration.toFixed(2)} s`;
+}
+
+function advanceAnimation(delta) {
+  if (!state.mixer) return;
+  if (state.playing) state.mixer.update(delta * (+ui('speed').value / 100));
+  updateHeadAxes();
+  const duration = state.action.getClip().duration;
+  if (state.playing && duration) {
+    ui('scrub').value = Math.round((state.action.time % duration) / duration * 1000);
+    updateClock();
+  }
+}
+
+// How much of the canvas the panel covers, so the model can be framed against
+// what is actually visible rather than against the whole window.
+function panelGutter() {
+  const rect = document.getElementById('panel').getBoundingClientRect();
+  return innerWidth < 720
+    ? { left: 0, bottom: innerHeight - rect.top + 12 }
+    : { left: rect.right + 12, bottom: 0 };
+}
+
+// The frustum is built for a virtual view that much larger than the canvas, of
+// which we render the part away from the panel. That shifts the centre clear of
+// it and keeps it there while orbiting, which panning the target would not.
+function updateProjection() {
+  const gutter = panelGutter();
+  const fullWidth = innerWidth + gutter.left;
+  const fullHeight = innerHeight + gutter.bottom;
+  camera.aspect = fullWidth / fullHeight;
+  if (gutter.left || gutter.bottom) {
+    camera.setViewOffset(fullWidth, fullHeight, 0, gutter.bottom,
+                         innerWidth, innerHeight);
+  } else {
+    camera.clearViewOffset();
+  }
+  camera.updateProjectionMatrix();
+}
+
+function frameModel(keepOrientation) {
+  if (!state.bounds) return;
+  const { center, size } = state.bounds;
+  const fov = THREE.MathUtils.degToRad(camera.fov);
+  const gutter = panelGutter();
+  const fullHeight = innerHeight + gutter.bottom;
+  const fit = Math.max(size.y / (innerHeight - gutter.bottom),
+                       size.x / (innerWidth - gutter.left));
+  const distance = fit * fullHeight / (2 * Math.tan(fov / 2)) * 1.08 + size.z * 0.6;
+  const direction = keepOrientation
+    ? camera.position.clone().sub(controls.target).normalize()
+    : new THREE.Vector3(0, 0.04, 1).normalize();
+  controls.target.copy(center);
+  camera.position.copy(center).addScaledVector(direction, distance);
+  camera.near = distance / 200;
+  camera.far = distance * 20;
+  state.fitDistance = distance;
+  updateProjection();
+  controls.update();
+}
+
+function resetCamera() {
+  frameModel(false);
+}
+
+/* ----------------------------------------------------------------------- ui */
+
+const MODES = { toon: 0, base: 1, ramp: 2, normal: 3, mask: 4 };
+
+function applyUi() {
+  const azimuth = THREE.MathUtils.degToRad(+ui('azimuth').value);
+  const elevation = THREE.MathUtils.degToRad(+ui('elevation').value);
+  if (ui('lightFollow').checked) {
+    state.lightDirection.copy(camera.position).sub(controls.target).normalize();
+  } else {
+    state.lightDirection.set(
+      Math.cos(elevation) * Math.sin(azimuth),
+      Math.sin(elevation),
+      Math.cos(elevation) * Math.cos(azimuth)).normalize();
+  }
+
+  const intensity = +ui('intensity').value / 100;
+  const shadowDepth = +ui('shadowDepth').value / 100;
+  const attenScale = +ui('attenScale').value / 100;
+  const rimScale = +ui('rimScale').value / 100;
+  const specScale = +ui('specScale').value / 100;
+  const emitScale = +ui('emitScale').value / 100;
+  const matcapOn = ui('matcap').checked;
+  const mode = MODES[ui('mode').value];
+  const browOver = ui('browOver').checked;
+
+  for (const m of state.materials) {
+    m.uniforms.lightIntensity.value = intensity;
+    m.uniforms.shadowDepth.value = shadowDepth;
+    m.uniforms.attenScale.value = attenScale;
+    m.uniforms.rimScale.value = rimScale;
+    m.uniforms.specScale.value = specScale;
+    m.uniforms.emitScale.value = emitScale;
+    m.uniforms.enableMatcap.value = matcapOn ? m.userData.matcapFlag : 0;
+    m.uniforms.faceSdfOn.value = ui('faceSdf').checked ? 1 : 0;
+    m.uniforms.debugMode.value = mode;
+    if (m.userData.charSurface === 1) {
+      m.depthTest = !browOver;
+      m.needsUpdate = true;
+    }
+  }
+
+  const outlineOn = ui('outline').checked;
+  const outlineWidth = +ui('outlineWidth').value / 100;
+  for (const o of state.outlines) {
+    o.visible = outlineOn && mode === 0;
+    o.material.uniforms.outlineWidth.value = o.material.userData.baseWidth * outlineWidth;
+  }
+
+  const showEmotes = ui('emotes').checked;
+  if (state.model) {
+    state.model.traverse(o => {
+      if (o.isMesh && o.userData.isEmoteOverlay) o.visible = showEmotes;
+    });
+  }
+
+  scene.background = new THREE.Color(ui('bg').value);
+  grid.visible = mode === 0;
+  controls.autoRotate = ui('spin').checked;
+  controls.autoRotateSpeed = 1.6;
+
+  // label.row only: the transport's output is a clock, not a slider readout.
+  for (const el of document.querySelectorAll('label.row input[type=range]')) {
+    const out = el.parentElement.querySelector('output');
+    if (out) out.textContent = el.id === 'azimuth' || el.id === 'elevation'
+      ? `${el.value}°` : `${el.value}%`;
+  }
+}
+
+for (const el of document.querySelectorAll('#panel input, #panel select')) {
+  el.addEventListener('input', applyUi);
+}
+ui('reset').addEventListener('click', resetCamera);
+// '' is the bind-pose entry, and would coerce to clip 0.
+ui('clip').addEventListener('change', e =>
+  playClip(e.target.value === '' ? -1 : +e.target.value).catch(reportError));
+ui('play').addEventListener('click', () => {
+  if (state.action) setPlaying(!state.playing);
+});
+ui('scrub').addEventListener('input', () => {
+  if (!state.action) return;
+  setPlaying(false);
+  state.action.time = state.action.getClip().duration * (+ui('scrub').value / 1000);
+  state.mixer.update(0);
+  updateHeadAxes();
+  updateClock();
+});
+ui('model').addEventListener('change', e => {
+  document.getElementById('msg').style.display = '';
+  document.getElementById('msg').textContent = 'loading…';
+  loadModel(e.target.value).catch(reportError);
+});
+
+let skeletonHelpers = [];
+ui('skeleton').addEventListener('input', () => {
+  skeletonHelpers.forEach(h => scene.remove(h));
+  skeletonHelpers = [];
+  if (!ui('skeleton').checked || !state.model) return;
+  state.model.traverse(o => {
+    if (o.isSkinnedMesh && o.skeleton.bones.length) {
+      const helper = new THREE.SkeletonHelper(o.skeleton.bones[0]);
+      helper.material.depthTest = false;
+      skeletonHelpers.push(helper);
+      scene.add(helper);
+    }
+  });
+});
+
+function reportError(err) {
+  const msg = document.getElementById('msg');
+  msg.style.display = '';
+  msg.textContent = String(err.message || err);
+  console.error(err);
+}
+
+/* -------------------------------------------------------------------- start */
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  // Re-fit only while the view is still the one we chose, so a resize never
+  // throws away a zoom or pan the user set up themselves.
+  const pristine = state.fitDistance
+    && Math.abs(camera.position.distanceTo(controls.target) - state.fitDistance)
+       < state.fitDistance * 0.02
+    && state.bounds.center.distanceTo(controls.target) < state.fitDistance * 0.02;
+  updateProjection();
+  if (pristine) frameModel(true);
+  fitPanel();
+}
+addEventListener('resize', resize);
+resize();
+
+const timer = new THREE.Timer();
+timer.connect(document);   // a hidden tab reports no delta, so nothing jumps
+
+renderer.setAnimationLoop(timestamp => {
+  timer.update(timestamp);
+  advanceAnimation(timer.getDelta());
+  if (ui('lightFollow').checked || controls.autoRotate) applyUi();
+  controls.update();
+  renderer.render(scene, camera);
+});
+
+(async () => {
+  let entries;
+  try {
+    entries = await (await fetch(MODELS + 'index.json')).json();
+  } catch {
+    entries = [{ id: '13301', file: 'char_13301.glb' }];
+  }
+  const select = ui('model');
+  select.innerHTML = entries
+    .map(e => `<option value="${MODELS}${e.file}">${e.label || e.id}</option>`).join('');
+  applyUi();
+  loadModel(select.value).catch(reportError);
+})();
+</script>
+</body>
+</html>
