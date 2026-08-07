@@ -19,8 +19,10 @@ from playwright.sync_api import Browser, Page, sync_playwright
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_VIEWER_PATH = "/assets/assetbundles/actor2d/live2d_test.html"
-DEFAULT_SCREENSHOT_PATH = Path("assets/assetbundles/actor2d/live2d_test.png")
+VIEWER_HTML = Path(__file__).resolve().with_name("live2d_viewer.html")
+# The static server serves REPO_ROOT, so the viewer is addressed by its path within the repo.
+DEFAULT_VIEWER_PATH = "/" + VIEWER_HTML.relative_to(REPO_ROOT).as_posix()
+DEFAULT_SCREENSHOT_PATH = Path("assets/l2d/live2d_test.png")
 
 
 @dataclass

@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stella Sora Live2D Test</title>
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #202020;
+      color: #f2f2f2;
+      font-family: Arial, sans-serif;
+    }
+
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #controls {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: auto minmax(180px, 360px);
+      gap: 8px 10px;
+      align-items: center;
+      max-width: min(620px, calc(100vw - 24px));
+      padding: 10px;
+      border-radius: 4px;
+      background: rgb(0 0 0 / 70%);
+      font-size: 13px;
+    }
+
+    label {
+      white-space: nowrap;
+    }
+
+    select,
+    input {
+      min-width: 0;
+      color: #f2f2f2;
+      background: #303030;
+      border: 1px solid #555;
+      border-radius: 4px;
+    }
+
+    select {
+      height: 28px;
+      padding: 2px 6px;
+    }
+
+    input[type="range"] {
+      width: 100%;
+    }
+
+    input[type="checkbox"] {
+      justify-self: start;
+      width: 16px;
+      height: 16px;
+    }
+
+    #status {
+      position: fixed;
+      left: 12px;
+      bottom: 12px;
+      max-width: min(720px, calc(100vw - 24px));
+      padding: 8px 10px;
+      border-radius: 4px;
+      background: rgb(0 0 0 / 70%);
+      font-size: 13px;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<div id="controls">
+  <label for="modelSelect">Model</label>
+  <select id="modelSelect"></select>
+
+  <label for="phaseSelect">Phase</label>
+  <select id="phaseSelect"></select>
+
+  <label for="scaleInput">Scale</label>
+  <input id="scaleInput" type="range" min="0.25" max="1.5" step="0.01" value="0.9">
+
+  <label for="renderResolutionInput">Render resolution</label>
+  <select id="renderResolutionInput">
+    <option value="device">Device</option>
+    <option value="1">1x</option>
+    <option value="1.5">1.5x</option>
+    <option value="2">2x</option>
+    <option value="3">3x</option>
+    <option value="4">4x</option>
+  </select>
+
+  <label for="mouseTrackingInput">Mouse tracking</label>
+  <input id="mouseTrackingInput" type="checkbox">
+</div>
+<div id="status">Loading...</div>
+<script src="https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@6.5.2/dist/browser/pixi.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display/dist/cubism4.min.js"></script>
+<script>
+  const DEFAULT_MODEL = "/assets/assetbundles/actor2d/character/10301/live2d/talent/10301_talent.model3.json";
+  const CHARACTER_ROOT = "/assets/assetbundles/actor2d/character/";
+  const TALENT_PHASES = [
+    { label: "0: idle_0", motion: "idle_0" },
+    { label: "1: idle_0a", motion: "idle_0a" },
+    { label: "2: idle_1", motion: "idle_1" },
+    { label: "3+: idle_2", motion: "idle_2" }
+  ];
+
+  const status = document.getElementById("status");
+  const modelSelect = document.getElementById("modelSelect");
+  const phaseSelect = document.getElementById("phaseSelect");
+  const scaleInput = document.getElementById("scaleInput");
+  const renderResolutionInput = document.getElementById("renderResolutionInput");
+  const mouseTrackingInput = document.getElementById("mouseTrackingInput");
+  const params = new URLSearchParams(window.location.search);
+  let app = null;
+  let currentModel = null;
+  let currentModelJson = null;
+
+  function setStatus(message) {
+    status.textContent = message;
+  }
+
+  function modelLabel(path) {
+    const match = path.match(/character\/(\d+)\/live2d\/([^/]+)\//);
+    if (!match) {
+      return path;
+    }
+    return `${match[1]} ${match[2]}`;
+  }
+
+  function selectedScale() {
+    const value = Number.parseFloat(scaleInput.value);
+    return Number.isNaN(value) ? 0.9 : value;
+  }
+
+  function selectedRenderResolution() {
+    if (renderResolutionInput.value === "device") {
+      return Math.max(1, window.devicePixelRatio || 1);
+    }
+
+    const value = Number.parseFloat(renderResolutionInput.value);
+    return Number.isNaN(value) ? 1 : Math.max(1, value);
+  }
+
+  function parseBooleanParam(name) {
+    const value = params.get(name);
+    if (value === null) {
+      return null;
+    }
+
+    return ["1", "true", "yes", "on"].includes(value.toLowerCase());
+  }
+
+  function mouseTrackingEnabled() {
+    return mouseTrackingInput.checked;
+  }
+
+  function normalizePath(path) {
+    return path.startsWith("/") ? path : `/${path}`;
+  }
+
+  function setInitialRenderResolution() {
+    const requested = params.get("renderResolution") || params.get("resolution") || "device";
+    const values = [...renderResolutionInput.options].map((option) => option.value);
+    renderResolutionInput.value = values.includes(requested) ? requested : "device";
+  }
+
+  async function listDirectory(path) {
+    const response = await fetch(path);
+    if (!response.ok) {
+      throw new Error(`Could not list ${path}: HTTP ${response.status}`);
+    }
+
+    const html = await response.text();
+    const documentFragment = new DOMParser().parseFromString(html, "text/html");
+    return [...documentFragment.querySelectorAll("a")]
+      .map((link) => link.getAttribute("href"))
+      .filter(Boolean)
+      .map((href) => new URL(href, window.location.origin + path).pathname)
+      .filter((href) => href !== path && !href.endsWith("/../"));
+  }
+
+  async function discoverModelPaths() {
+    try {
+      const skinDirs = (await listDirectory(CHARACTER_ROOT))
+        .filter((path) => /\/\d+\/$/.test(path));
+
+      const paths = [];
+      await Promise.all(skinDirs.map(async (skinDir) => {
+        let variantDirs = [];
+        try {
+          variantDirs = (await listDirectory(`${skinDir}live2d/`))
+            .filter((path) => /\/(base|full|talent)\/$/.test(path));
+        } catch {
+          return;
+        }
+
+        await Promise.all(variantDirs.map(async (variantDir) => {
+          try {
+            const modelPath = (await listDirectory(variantDir))
+              .find((path) => path.endsWith(".model3.json"));
+            if (modelPath) {
+              paths.push(modelPath);
+            }
+          } catch {
+            return;
+          }
+        }));
+      }));
+
+      return paths.sort((left, right) => modelLabel(left).localeCompare(modelLabel(right)));
+    } catch (error) {
+      console.warn(error);
+      return [DEFAULT_MODEL];
+    }
+  }
+
+  function populateModelSelect(paths) {
+    modelSelect.replaceChildren();
+    for (const path of paths) {
+      const option = document.createElement("option");
+      option.value = normalizePath(path);
+      option.textContent = modelLabel(path);
+      modelSelect.appendChild(option);
+    }
+
+    const requestedModel = normalizePath(params.get("model") || DEFAULT_MODEL);
+    if (paths.map(normalizePath).includes(requestedModel)) {
+      modelSelect.value = requestedModel;
+    }
+  }
+
+  function talentMotionEntries() {
+    const motions = currentModelJson?.FileReferences?.Motions?.Talent || [];
+    return motions.map((entry, index) => ({
+      index,
+      file: entry.File,
+      name: entry.File.split("/").pop().replace(".motion3.json", "")
+    }));
+  }
+
+  function populatePhaseSelect(preferredIndex = null) {
+    phaseSelect.replaceChildren();
+    const motions = talentMotionEntries();
+    const motionNames = new Set(motions.map((entry) => entry.name));
+
+    for (const phase of TALENT_PHASES) {
+      if (!motionNames.has(phase.motion)) {
+        continue;
+      }
+
+      const motion = motions.find((entry) => entry.name === phase.motion);
+      const option = document.createElement("option");
+      option.value = String(motion.index);
+      option.textContent = phase.label;
+      phaseSelect.appendChild(option);
+    }
+
+    if (!phaseSelect.options.length) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "No talent phases";
+      phaseSelect.appendChild(option);
+      phaseSelect.disabled = true;
+      return;
+    }
+
+    phaseSelect.disabled = false;
+    const requestedIndex = Number.parseInt(preferredIndex ?? params.get("index") ?? "0", 10);
+    const matchingOption = [...phaseSelect.options].find((option) => Number.parseInt(option.value, 10) === requestedIndex);
+    phaseSelect.value = matchingOption ? matchingOption.value : phaseSelect.options[0].value;
+  }
+
+  function fitModel() {
+    if (!currentModel) {
+      return;
+    }
+
+    currentModel.scale.set(1);
+    const bounds = currentModel.getLocalBounds();
+    currentModel.pivot.set(
+      bounds.x + bounds.width / 2,
+      bounds.y + bounds.height / 2
+    );
+
+    const scale = Math.min(
+      window.innerWidth / bounds.width,
+      window.innerHeight / bounds.height
+    ) * selectedScale();
+
+    currentModel.scale.set(scale);
+    currentModel.position.set(window.innerWidth / 2, window.innerHeight / 2);
+  }
+
+  function resizeRenderer() {
+    if (!app) {
+      return;
+    }
+
+    app.renderer.resolution = selectedRenderResolution();
+    app.renderer.resize(window.innerWidth, window.innerHeight);
+    fitModel();
+  }
+
+  function playSelectedPhase() {
+    if (!currentModel || phaseSelect.disabled) {
+      return;
+    }
+
+    const index = Number.parseInt(phaseSelect.value, 10);
+    if (Number.isNaN(index)) {
+      return;
+    }
+
+    currentModel.motion("Talent", index, PIXI.live2d.MotionPriority.FORCE);
+    setStatus(`Loaded ${modelSelect.value} | motion Talent[${index}]`);
+  }
+
+  async function loadSelectedModel({ preservePhase = false } = {}) {
+    const modelPath = modelSelect.value;
+    setStatus(`Loading ${modelPath}`);
+    const previousPhase = preservePhase ? phaseSelect.value : null;
+
+    if (currentModel) {
+      app.stage.removeChild(currentModel);
+      currentModel.destroy({ children: true });
+      currentModel = null;
+    }
+
+    const modelResponse = await fetch(modelPath);
+    if (!modelResponse.ok) {
+      throw new Error(`Could not load ${modelPath}: HTTP ${modelResponse.status}`);
+    }
+    currentModelJson = await modelResponse.json();
+    populatePhaseSelect(previousPhase);
+
+    currentModel = await PIXI.live2d.Live2DModel.from(modelPath, {
+      autoInteract: mouseTrackingEnabled()
+    });
+    app.stage.addChild(currentModel);
+    fitModel();
+    playSelectedPhase();
+    setStatus(`Loaded ${modelPath}`);
+  }
+
+  async function main() {
+    const requestedScale = Number.parseFloat(params.get("scale") || "0.9");
+    scaleInput.value = String(Number.isNaN(requestedScale) ? 0.9 : requestedScale);
+    setInitialRenderResolution();
+    mouseTrackingInput.checked = parseBooleanParam("mouseTracking")
+      ?? parseBooleanParam("trackMouse")
+      ?? false;
+
+    app = new PIXI.Application({
+      resizeTo: window,
+      resolution: selectedRenderResolution(),
+      autoDensity: true,
+      antialias: true,
+      backgroundAlpha: 0,
+      autoStart: true
+    });
+
+    document.body.appendChild(app.view);
+
+    setStatus("Finding exported models...");
+    populateModelSelect(await discoverModelPaths());
+
+    modelSelect.addEventListener("change", () => {
+      loadSelectedModel().catch((error) => {
+        console.error(error);
+        setStatus(`Live2D load failed: ${error}`);
+      });
+    });
+    phaseSelect.addEventListener("change", playSelectedPhase);
+    scaleInput.addEventListener("input", fitModel);
+    renderResolutionInput.addEventListener("change", resizeRenderer);
+    mouseTrackingInput.addEventListener("change", () => {
+      loadSelectedModel({ preservePhase: true }).catch((error) => {
+        console.error(error);
+        setStatus(`Live2D load failed: ${error}`);
+      });
+    });
+    window.addEventListener("resize", resizeRenderer);
+
+    await loadSelectedModel();
+  }
+
+  main().catch((error) => {
+    console.error(error);
+    setStatus(`Live2D load failed: ${error}`);
+  });
+</script>
+</body>
+</html>
