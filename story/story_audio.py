@@ -1,6 +1,7 @@
 import re
 import shutil
 import subprocess
+import sys
 from functools import cache
 from pathlib import Path
 
@@ -18,7 +19,7 @@ def get_hash_to_txtp_mapping() -> dict[str, Path]:
     txtp_path = sound_dir / "avg_txtp"
     subprocess.run(
         [
-            "python",
+            sys.executable,
             wwiser_path.absolute(),
             "--txtp",
             bnk_path.absolute()
@@ -62,7 +63,7 @@ def get_bgm_hash_to_txtp_mapping() -> dict[str, Path]:
 
     subprocess.run(
         [
-            "python",
+            sys.executable,
             wwiser_path.absolute(),
             "--txtp",
             bnk_path.absolute()

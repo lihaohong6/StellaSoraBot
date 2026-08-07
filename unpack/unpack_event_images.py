@@ -559,10 +559,20 @@ def _export_legacy_composites(
     return written, used_sprite_names
 
 
+def _old_asset_bundles() -> list[Path]:
+    """Bundles from a manually curated archive of old .unity3d files, if one exists."""
+    old_assets_dir = data_dir.parent / "OldAssets"
+    if not old_assets_dir.is_dir():
+        print(f"WARNING: {old_assets_dir} not found; event images that only exist in "
+              f"removed game content will be skipped.")
+        return []
+    return list(old_assets_dir.glob("*.unity3d"))
+
+
 def _activity_bundles() -> list[Path]:
     bundles = [
         bundle
-        for bundle in get_unity3d_files() + list((data_dir.parent / "OldAssets").glob("*.unity3d"))
+        for bundle in get_unity3d_files() + _old_asset_bundles()
         if (bundle.name.startswith("ui_activity") or bundle.name.startswith("ui_play_"))
         and bundle.suffix == ".unity3d"
         and not bundle.name.endswith(".en.unity3d")

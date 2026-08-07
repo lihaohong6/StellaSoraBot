@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from functools import cache
@@ -12,6 +13,10 @@ from UnityPy.files import ObjectReader
 from unpack.unpack_paths import vendor_library_dir, unity_asset_dir_2, unity_asset_dir_1
 
 T = TypeVar("T")
+
+
+def native_exe(path: Path) -> Path:
+    return path.with_suffix(".exe") if os.name == "nt" else path
 
 
 def for_each_object(f: Path, mapper: Callable[[ObjectReader, Environment], T]) -> list[T]:

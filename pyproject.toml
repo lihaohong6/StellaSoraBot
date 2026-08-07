@@ -2,14 +2,17 @@
 name = "stellasorabot"
 version = "0.1.0"
 description = "Add your description here"
-requires-python = "~=3.13.0"
+requires-python = ">=3.13"
 dependencies = [
     "fastdtw>=0.3.4",
     "librosa>=0.11.0",
+    "numpy>=2.2.6",
     "opencv-python>=4.12.0.88",
+    "pillow>=12.0.0",
     "playwright>=1.60.0",
     "pywikibot>=10.5.0",
     "requests>=2.32.5",
+    "scipy>=1.17.1",
     "slpp>=1.2.3",
     "unitypy[ttgen]==1.23.0",
     "wikitextparser>=0.56.4",
@@ -24,7 +27,6 @@ grounding = [
     "addict",
     "yapf",
     "timm",
-    "numpy",
     "supervision>=0.22.0",
     "pycocotools",
 ]

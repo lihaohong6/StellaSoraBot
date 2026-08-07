@@ -1,4 +1,6 @@
 import json
+import subprocess
+import tempfile
 from functools import cache
 from pathlib import Path
 from typing import Any, Callable
@@ -21,12 +23,21 @@ audio_wav_root = Path("assets/audio")
 lua_root = Path("assets/lua")
 sprite_root = Path("assets/sprites")
 
-temp_dir = Path("/tmp/stellasorabot")
+temp_dir = Path(tempfile.gettempdir()) / "stellasorabot"
 temp_dir.mkdir(parents=True, exist_ok=True)
 
-assert en_root.exists()
-assert json_root.exists()
-assert strings_root.exists()
+if not data_root.exists():
+    subprocess.run(['git', 'clone', 'https://github.com/Hiro420/StellaSoraData'],
+                   check=True,
+                   cwd=vendor_library_dir)
+
+for _required in (en_root, json_root, strings_root):
+    if not _required.exists():
+        raise RuntimeError(
+            f"Missing game data directory: {_required.absolute()}\n"
+            f"Delete {data_root.absolute()} and rerun to clone it again.\n"
+            f"Run all commands from the repository root."
+        )
 
 
 @cache

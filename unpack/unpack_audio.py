@@ -1,4 +1,6 @@
+import re
 import subprocess
+import sys
 from pathlib import Path
 
 from unpack.unpack_paths import sound_dir, unity_asset_dir_1, bgm_wem_dir
@@ -32,13 +34,14 @@ def export_disc_txtp():
     bnk_path = sound_dir / "Music_Outfit.bnk"
     assert bnk_path.exists()
     assert bgm_wem_dir.exists()
-    subprocess.run(["python", executable_path.absolute(),
+    subprocess.run([sys.executable, executable_path.absolute(),
                     "--txtp", bnk_path.absolute()],
                    check=True, cwd=bgm_wem_dir)
-    subprocess.run(["fd", "-e", "txtp", "-x", "sed", "-i", "-E", r's|wem/([0-9]+)\.wem|../\1.media.wem|g'],
-                   check=True, cwd=bgm_wem_dir)
-    subprocess.run(["fd", "-e", "txtp", "-x", "sed", "-i", r"s|wem/Music_Outfit.bnk|../../Music_Outfit.bnk|g"],
-                   check=True, cwd=bgm_wem_dir)
+    for txtp in bgm_wem_dir.rglob("*.txtp"):
+        text = txtp.read_text(encoding="utf-8")
+        text = re.sub(r"wem/([0-9]+)\.wem", r"../\1.media.wem", text)
+        text = text.replace("wem/Music_Outfit.bnk", "../../Music_Outfit.bnk")
+        txtp.write_text(text, encoding="utf-8")
 
 
 def main():
