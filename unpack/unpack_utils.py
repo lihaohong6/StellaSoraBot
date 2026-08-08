@@ -1,3 +1,4 @@
+import gc
 import json
 import os
 import subprocess
@@ -21,11 +22,15 @@ def native_exe(path: Path) -> Path:
 
 def for_each_object(f: Path, mapper: Callable[[ObjectReader, Environment], T]) -> list[T]:
     env = UnityPy.load(str(f))
-    result: list[T] = []
-    for obj in env.objects:
-        r = mapper(obj, env)
-        if r is not None:
-            result.append(r)
+    try:
+        result: list[T] = []
+        for obj in env.objects:
+            r = mapper(obj, env)
+            if r is not None:
+                result.append(r)
+    finally:
+        del env
+        gc.collect()
     return result
 
 
