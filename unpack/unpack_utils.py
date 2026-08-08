@@ -38,7 +38,9 @@ def get_unity3d_files() -> list[Path]:
     return list(files.values())
 
 
-def asset_map(files: list[Path], mapper: Callable[[ObjectReader, Environment], T], max_workers: int = 20) -> list[T]:
+def asset_map(files: list[Path], mapper: Callable[[ObjectReader, Environment], T], max_workers: int | None = None) -> list[T]:
+    if max_workers is None:
+        max_workers = max(os.cpu_count() - 4, 4)
     print(f"Processing {len(files)} files...")
     result: list[T] = []
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
