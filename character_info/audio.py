@@ -19,6 +19,7 @@ from utils.data_utils import autoload, load_json_from_path, en_root, jp_root, au
     string_postprocessor
 from utils.upload_utils import UploadRequest, process_uploads, upload_file
 from utils.wiki_utils import save_page, s
+from utils.text_utils import escape_text
 
 
 @dataclass
@@ -53,7 +54,7 @@ class CharacterAudio:
 def process_transcription(original: list[str] | str) -> str:
     if type(original) is str:
         original = [original]
-    return "<br/>".join(o.replace("==RT==", "") for o in original if o.strip() != "")
+    return escape_text("<br/>".join(o.replace("==RT==", "") for o in original if o.strip() != ""))
 
 
 @cache
