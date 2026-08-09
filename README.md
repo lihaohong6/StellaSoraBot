@@ -13,6 +13,7 @@ Special thanks to [StellaSoraData](https://github.com/Hiro420/StellaSoraData) an
 | Python 3.13+ | | `uv python install 3.13` |
 | Git | vendored repos under `vendor/` are cloned/pulled at runtime | `winget install Git.Git` |
 | .NET 8 SDK | `dotnet build` of the fkStellaSora unpacker | `winget install Microsoft.DotNet.SDK.8` |
+| Java 17+ (JRE/JDK) | fkStellaSora's Luadec step runs `java -jar unluac.jar` to decompile lua | `winget install EclipseAdoptium.Temurin.17.JDK` |
 | ffmpeg (with ffprobe) | wav→ogg conversion, audio duration | `winget install Gyan.FFmpeg` |
 | vgmstream-cli | wem/txtp→wav conversion | download [vgmstream-win64](https://vgmstream.org/), add to `PATH` |
 | Chrome/Chromium | Playwright-driven Live2D screenshots | After `uv sync`, run `uv run playwright install chromium` |
