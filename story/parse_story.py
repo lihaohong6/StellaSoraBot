@@ -82,6 +82,11 @@ def get_character_name_from_id(char_id: str | int) -> str:
     return char_id
 
 
+def phone_sticker_link(image_name: str) -> str:
+    size = "90" if image_name.startswith("emoji") else "200"
+    return f"[[File:Phone_{image_name}.png|{size}px]]"
+
+
 def process_text(text: str) -> str:
     sex_dict = get_character_sex_strings()
     gender_tabs: dict[str, str] = {}
@@ -140,11 +145,7 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
         cmd = row["cmd"]
         params = row.get("param", [])
 
-        def set_talk():
-            _, char_id, _, _, _, _, _, text, _ = params
-            text = process_text(text)
-            if not text:
-                return
+        def append_dialogue(char_id: str, text: str):
             speaker_name = get_character_name_from_id(char_id)
 
             char_state = state.get_character_state(char_id)
@@ -166,6 +167,24 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
                     },
                 )
             )
+
+        def set_talk():
+            _, char_id, _, _, _, _, _, text, _ = params
+            text = process_text(text)
+            if text:
+                append_dialogue(char_id, text)
+
+        def set_phone_msg():
+            msg_type, char_id, image_name, _, _, _, _, text, _ = params
+            text = process_text(text)
+            if msg_type == 5:
+                if text:
+                    rows.append(StoryRow("info", {"text": text}))
+                return
+            if msg_type in (3, 4) and image_name:
+                text = phone_sticker_link(image_name)
+            if text:
+                append_dialogue(char_id, text)
 
         def set_bgm():
             track_type = params[0]
@@ -336,7 +355,7 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
         # Dispatcher for different command types
         dispatcher = {
             "SetTalk": set_talk,
-            "SetPhoneMsg": set_talk,
+            "SetPhoneMsg": set_phone_msg,
             "SetBGM": set_bgm,
             "SetBg": set_bg,
             "SetSceneHeading": set_scene_heading,

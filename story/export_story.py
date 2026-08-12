@@ -183,6 +183,12 @@ def story_row_to_messenger(
             result.extend(["| message", f"| text :: {text}", ""])
         return _append_group_option(result, group, option)
 
+    if row.name == "info":
+        text = row.attributes.get("text", "")
+        if text:
+            result.extend(["| info", f"| text :: {text}", ""])
+        return _append_group_option(result, group, option)
+
     if row.name == "scene_heading":
         time = row.attributes.get("time", "")
         location = row.attributes.get("location", "")
