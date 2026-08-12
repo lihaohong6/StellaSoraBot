@@ -1,4 +1,5 @@
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cache
 from typing import Optional
@@ -6,9 +7,8 @@ from typing import Optional
 from character_info.char_sprite_face import sanitize_css_class
 from character_info.characters import id_to_char
 from story.parse_story import get_story_episodes, StoryEpisode, StoryRow
-from story.story_audio import get_bgm_path, get_sound_effect_path
+from story.story_assets import export_story_assets, get_front_object_file_name
 from utils.data_utils import assets_root
-from utils.upload_utils import UploadRequest, process_uploads
 from utils.wiki_utils import save_page
 
 
@@ -31,6 +31,13 @@ class StoryExport:
 class StoryPageExport:
     page_title: str
     episode_id: str
+
+
+@dataclass
+class StoryEntry:
+    page_title: str
+    episode_id: str
+    parent_episode_ids: tuple[str, ...]
 
 
 @dataclass
@@ -57,10 +64,6 @@ def get_character_sprite_path(
         # If expression is not a valid number, default to "00"
         expr_num = 0
     return f"{char_name}_{variant}_{expr_num:02d}.png"
-
-
-def get_front_object_file_name(image_name: str) -> str:
-    return f"Story element {image_name}.png"
 
 
 def character_id_to_speaker_name(char_id: str) -> str:
@@ -385,6 +388,69 @@ def episode_to_messenger_template(
     return "\n".join(result)
 
 
+def major_choice_target_links(
+    entries: Sequence[StoryEntry],
+    episodes: dict[str, StoryEpisode],
+) -> dict[str, dict[tuple[str, str], str]]:
+    result: dict[str, dict[tuple[str, str], str]] = {}
+
+    for entry in entries:
+        episode = episodes.get(entry.episode_id)
+        if episode is None:
+            continue
+
+        child_entries = [
+            child_entry
+            for child_entry in entries
+            if entry.episode_id in child_entry.parent_episode_ids
+        ]
+        if not child_entries:
+            continue
+
+        for row in episode.rows:
+            if row.name != "choice_begin":
+                continue
+            if row.attributes.get("choice_type") != "major":
+                continue
+
+            options = [
+                key.removeprefix("option")
+                for key in row.attributes
+                if re.fullmatch(r"option\d+", key)
+            ]
+            options = sorted(options, key=int)
+            if len(options) != len(child_entries):
+                print(
+                    "WARNING: Major choice target count mismatch for "
+                    f"{entry.page_title}: {len(options)} options, "
+                    f"{len(child_entries)} child pages"
+                )
+                continue
+
+            choice_id = row.attributes["choice_id"]
+            for option, child_entry in zip(options, child_entries):
+                result.setdefault(entry.episode_id, {})[
+                    (choice_id, option)
+                ] = child_entry.page_title
+
+    return result
+
+
+def story_nav_template(
+    template_name: str,
+    prev_page: str | None,
+    next_page: str | None,
+) -> str:
+    args = []
+    if next_page is not None:
+        args.append(f"next_page={next_page}")
+    if prev_page is not None:
+        args.append(f"prev_page={prev_page}")
+    if args:
+        return "{{" + template_name + "|" + "|".join(args) + "}}"
+    return "{{" + template_name + "}}"
+
+
 def create_branch_tabs(branch_groups: dict[str, str], base_episode_id: str) -> str:
     if not branch_groups:
         return ""
@@ -460,9 +526,7 @@ def save_story_pages(
 
 def main():
     episodes = get_story_episodes()
-    export_bgm_files(episodes)
-    export_sound_effects(episodes)
-    export_front_object_files(episodes)
+    export_story_assets(episodes)
     exports = process_story_branches(episodes)
 
     # Get the first story export
@@ -476,82 +540,6 @@ def main():
         else:
             # If it's a single story, output the messenger template
             print(export_data.main_content)
-
-
-def export_bgm_files(episodes: dict[str, StoryEpisode]) -> None:
-    bgm_files: set[str] = set()
-    for episode in episodes.values():
-        for row in episode.rows:
-            if row.name == "bgm":
-                bgm_file = row.attributes.get("file", "")
-                if bgm_file:
-                    bgm_files.add(bgm_file)
-    upload_requests = []
-    for bgm in sorted(bgm_files):
-        if not bgm.startswith("m"):
-            print(f"WARNING: unrecognized bgm name: {bgm}")
-        try:
-            path = get_bgm_path(bgm)
-        except KeyError:
-            print(f"WARNING: Could not find BGM asset for {bgm}")
-            continue
-        upload_requests.append(UploadRequest(
-            path,
-            f"File:Bg{bgm}.ogg",
-            "[[Category:Story BGMs]]",
-            'batch upload story bgms')
-        )
-    process_uploads(upload_requests)
-
-
-def export_sound_effects(episodes: dict[str, StoryEpisode]) -> None:
-    sound_effects: set[str] = set()
-    for episode in episodes.values():
-        for row in episode.rows:
-            if row.name == "sound_effect":
-                for se_file in row.attributes.get("files", "").split(","):
-                    if se_file:
-                        sound_effects.add(se_file)
-    upload_requests = []
-    for se in sorted(sound_effects):
-        if not se.startswith("se"):
-            continue
-        if "stop" in se:
-            continue
-        path = get_sound_effect_path(se)
-        if path is None:
-            continue
-        upload_requests.append(UploadRequest(
-            path,
-            f"File:{se}.ogg",
-            "[[Category:Sound effects]]",
-            'batch upload story sound effects')
-        )
-    process_uploads(upload_requests)
-
-
-def export_front_object_files(episodes: dict[str, StoryEpisode]) -> None:
-    image_names: set[str] = set()
-    for episode in episodes.values():
-        for row in episode.rows:
-            if row.name == "front_object":
-                image_name = row.attributes.get("image", "")
-                if image_name:
-                    image_names.add(image_name)
-
-    upload_requests = []
-    for image_name in sorted(image_names):
-        path = assets_root / "icon" / "avgelement" / f"{image_name}.png"
-        if not path.exists():
-            print(f"WARNING: Could not find front object asset for {image_name}")
-            continue
-        upload_requests.append(UploadRequest(
-            path,
-            f"File:{get_front_object_file_name(image_name)}",
-            "[[Category:Story element images]]",
-            "batch upload story element images"
-        ))
-    process_uploads(upload_requests)
 
 
 if __name__ == "__main__":

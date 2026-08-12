@@ -10,10 +10,10 @@ from wikitextparser import parse
 from page_generators.events import get_all_events, get_event_pages
 from story.export_story import (
     episode_to_messenger_template,
-    export_bgm_files,
-    export_front_object_files,
-    export_sound_effects,
+    major_choice_target_links,
     save_story_pages,
+    StoryEntry,
+    story_nav_template,
     with_tyrant_gender_selector,
 )
 from story.parse_story import (
@@ -22,18 +22,16 @@ from story.parse_story import (
     parse_story_config,
     StoryEpisode,
 )
+from story.story_assets import export_story_assets
 from utils.data_utils import autoload
 from utils.wiki_utils import force_section_text, save_page, s
 
 
 @dataclass
-class EventStoryEntry:
+class EventStoryEntry(StoryEntry):
     event_id: int
     event_name: str
-    page_title: str
     act_title: str
-    episode_id: str
-    parent_episode_ids: tuple[str, ...]
 
 
 @cache
@@ -132,54 +130,6 @@ def get_event_story_episodes() -> dict[str, StoryEpisode]:
     return episodes
 
 
-def _major_choice_target_links(
-    entries: list[EventStoryEntry],
-    episodes: dict[str, StoryEpisode],
-) -> dict[str, dict[tuple[str, str], str]]:
-    result: dict[str, dict[tuple[str, str], str]] = {}
-
-    for entry in entries:
-        episode = episodes.get(entry.episode_id)
-        if episode is None:
-            continue
-
-        child_entries = [
-            child_entry
-            for child_entry in entries
-            if entry.episode_id in child_entry.parent_episode_ids
-        ]
-        if not child_entries:
-            continue
-
-        for row in episode.rows:
-            if row.name != "choice_begin":
-                continue
-            if row.attributes.get("choice_type") != "major":
-                continue
-
-            options = [
-                key.removeprefix("option")
-                for key in row.attributes
-                if re.fullmatch(r"option\d+", key)
-            ]
-            options = sorted(options, key=int)
-            if len(options) != len(child_entries):
-                print(
-                    "WARNING: Major choice target count mismatch for "
-                    f"{entry.page_title}: {len(options)} options, "
-                    f"{len(child_entries)} child acts"
-                )
-                continue
-
-            choice_id = row.attributes["choice_id"]
-            for option, child_entry in zip(options, child_entries):
-                result.setdefault(entry.episode_id, {})[
-                    (choice_id, option)
-                ] = child_entry.page_title
-
-    return result
-
-
 def build_event_story_pages() -> dict[str, str]:
     episodes = get_event_story_episodes()
     pages: dict[str, str] = {}
@@ -189,12 +139,12 @@ def build_event_story_pages() -> dict[str, str]:
             event_entries.setdefault(entry.event_name, []).append(entry)
 
     for entries in event_entries.values():
-        choice_target_links = _major_choice_target_links(entries, episodes)
+        choice_target_links = major_choice_target_links(entries, episodes)
         for i, entry in enumerate(entries):
             prev_page = entries[i - 1].page_title if i > 0 else None
             next_page = entries[i + 1].page_title if i < len(entries) - 1 else None
-            top = event_story_template("EventStoryTop", prev_page, next_page)
-            bottom = event_story_template("EventStoryBottom", prev_page, next_page)
+            top = story_nav_template("EventStoryTop", prev_page, next_page)
+            bottom = story_nav_template("EventStoryBottom", prev_page, next_page)
             content = episode_to_messenger_template(
                 episodes[entry.episode_id],
                 choice_target_links.get(entry.episode_id),
@@ -203,21 +153,6 @@ def build_event_story_pages() -> dict[str, str]:
                 f"{top}\n{with_tyrant_gender_selector(content)}\n{bottom}"
             )
     return pages
-
-
-def event_story_template(
-    template_name: str,
-    prev_page: str | None,
-    next_page: str | None,
-) -> str:
-    args = []
-    if next_page is not None:
-        args.append(f"next_page={next_page}")
-    if prev_page is not None:
-        args.append(f"prev_page={prev_page}")
-    if args:
-        return "{{" + template_name + "|" + "|".join(args) + "}}"
-    return "{{" + template_name + "}}"
 
 
 def build_event_story_section(
@@ -266,9 +201,7 @@ def save_event_story_sections() -> None:
 
 def main():
     event_episodes = get_event_story_episodes()
-    export_bgm_files(event_episodes)
-    export_sound_effects(event_episodes)
-    export_front_object_files(event_episodes)
+    export_story_assets(event_episodes)
     save_event_stories()
     save_event_story_sections()
 
