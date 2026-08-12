@@ -95,8 +95,10 @@ def escape_text(text: str) -> str:
             .replace("==P==", ""))
     text = re.subn("~~(?=~)", "~~<nowiki/>", text)[0]
     def repl(m: re.Match[str]) -> str:
-        lst = (int(x) for x in m.groups())
-        return bytes(lst).decode('utf-8')
+        try:
+            return bytes(int(x) for x in m.groups()).decode('utf-8')
+        except (ValueError, UnicodeDecodeError):
+            return m.group(0)
 
     text = re.subn(
         r'\\(\d{1,3})\\(\d{1,3})\\(\d{1,3})',

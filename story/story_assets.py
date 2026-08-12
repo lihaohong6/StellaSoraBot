@@ -20,6 +20,7 @@ def export_bgm_files(episodes: dict[str, StoryEpisode]) -> None:
     for bgm in sorted(bgm_files):
         if not bgm.startswith("m"):
             print(f"WARNING: unrecognized bgm name: {bgm}")
+            continue
         try:
             path = get_bgm_path(bgm)
         except KeyError:

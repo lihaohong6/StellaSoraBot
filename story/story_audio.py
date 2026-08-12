@@ -7,7 +7,7 @@ from pathlib import Path
 
 from character_info.audio import wav_to_ogg
 from page_generators.discs import txtp_to_wav
-from unpack.unpack_paths import sound_dir, bgm_wem_dir
+from unpack.unpack_paths import sound_dir
 from utils.audio_utils import wwise_fnv_hash, get_wwiser_executable_path
 from utils.data_utils import audio_wav_root
 
@@ -96,11 +96,3 @@ def get_bgm_path(name: str) -> Path:
             txtp_to_wav(txtp_path, wav_path)
         wav_to_ogg(wav_path, ogg_path)
     return ogg_path
-
-
-def main():
-    pass
-
-
-if __name__ == "__main__":
-    main()

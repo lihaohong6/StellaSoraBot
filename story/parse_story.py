@@ -40,7 +40,6 @@ class CharacterState:
 
 @dataclass
 class StoryState:
-    current_speaker: Optional[str] = None
     character_states: Optional[dict[str, CharacterState]] = None
     pending_reply_char: Optional[str] = None
     current_background: Optional[str] = None
@@ -51,9 +50,6 @@ class StoryState:
             self.character_states = {}
         if self.current_front_objects is None:
             self.current_front_objects = {}
-
-    def reset_speaker(self):
-        self.current_speaker = None
 
     def get_character_state(self, char_id: str) -> CharacterState:
         assert self.character_states is not None
@@ -145,14 +141,12 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
         params = row.get("param", [])
 
         def set_talk():
-            position, char_id, _, text_pos, voice_line, _, _, text, _ = params
+            _, char_id, _, _, _, _, _, text, _ = params
             text = process_text(text)
+            if not text:
+                return
             speaker_name = get_character_name_from_id(char_id)
 
-            if speaker_name != state.current_speaker:
-                state.current_speaker = speaker_name
-
-            # Get character state for sprite information
             char_state = state.get_character_state(char_id)
 
             is_reply = char_id == state.pending_reply_char
@@ -165,8 +159,6 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
                     {
                         "speaker": speaker_name,
                         "text": text,
-                        "voice": voice_line if voice_line else "",
-                        "position": str(position),
                         "character_id": char_id,
                         "variant": char_state.variant,
                         "expression": char_state.expression,
@@ -260,7 +252,6 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
                     {
                         "image": image_name.lower(),
                         "position": position,
-                        "scale": str(params[5]),
                     },
                 )
             )
@@ -273,66 +264,19 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
             char_state = state.get_character_state(char_id)
             char_state.update(variant=char_part, expression=char_expression)
 
-        def append_character_state(char_id: str, char_part: str, char_expression: str):
-            character_name = get_character_name_from_id(char_id)
-            update_character_state(char_id, char_part, char_expression)
-            rows.append(
-                StoryRow(
-                    "character",
-                    {
-                        "character": character_name,
-                        "character_id": char_id,
-                        "part": char_part,
-                        "expression": char_expression,
-                    },
-                )
-            )
-
         def set_char():
-            char_id = params[3]
-            char_part = params[4]
-            char_expression = params[5]
-            append_character_state(char_id, char_part, char_expression)
+            update_character_state(params[3], params[4], params[5])
 
         def set_char_head():
-            char_id = params[5]
-            char_part = params[6]
-            char_expression = params[7]
-            append_character_state(char_id, char_part, char_expression)
+            update_character_state(params[5], params[6], params[7])
 
         def ctrl_char():
-            char_id = params[0]
-            char_part = params[1]
-            char_expression = params[2]
-            update_character_state(char_id, char_part, char_expression)
+            update_character_state(params[0], params[1], params[2])
 
         def set_main_role_talk():
-            # Player character dialogue
-            # Based on actual parameter structure from story files:
             # [position, _, expression, emoji, _, part, _, _, char_id]
-            position = params[0]
-            expression = params[2]
-            emoji = params[3]
-            char_part = params[5]
-            char_id = params[8]  # Character ID is at index 9 (0-based)
-
-            character_name = get_character_name_from_id(char_id)
-            update_character_state(char_id, char_part, expression)
-            state.pending_reply_char = char_id
-            rows.append(
-                StoryRow(
-                    "main_role_talk",
-                    {
-                        "position": str(position),
-                        "character": character_name,
-                        "character_id": char_id,
-                        "part": char_part,
-                        "expression": expression,
-                        "emoji": emoji,
-                        "direction": str(char_part),
-                    },
-                )
-            )
+            update_character_state(params[8], params[5], params[2])
+            state.pending_reply_char = params[8]
 
         def append_choice_begin(
             choice_id: str,
@@ -354,6 +298,9 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
 
         def set_personality_choice():
             append_choice_begin(str(params[0]), params[2:5])
+
+        def set_phone_msg_choice_begin():
+            append_choice_begin(str(params[0]), params[1:7])
 
         def set_major_choice():
             choice_texts = []
@@ -389,6 +336,7 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
         # Dispatcher for different command types
         dispatcher = {
             "SetTalk": set_talk,
+            "SetPhoneMsg": set_talk,
             "SetBGM": set_bgm,
             "SetBg": set_bg,
             "SetSceneHeading": set_scene_heading,
@@ -410,6 +358,10 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
             "SetMajorChoiceJumpTo": set_choice_jump,
             "SetMajorChoiceRollover": set_choice_rollover,
             "SetMajorChoiceEnd": set_choice_end,
+            "SetPhoneMsgChoiceBegin": set_phone_msg_choice_begin,
+            "SetPhoneMsgChoiceJumpTo": set_choice_jump,
+            "SetPhoneMsgChoiceRollover": set_choice_rollover,
+            "SetPhoneMsgChoiceEnd": set_choice_end,
             "End": lambda: None,
         }
 
@@ -446,27 +398,6 @@ def get_story_episodes() -> dict[str, StoryEpisode]:
     return result
 
 
-def handle_story_branches(episodes: dict[str, StoryEpisode]):
-    """Handle story branching logic (files ending with _a, _b, _c, etc.)."""
-    print("Placeholder: Handle story branches")
-    # This would identify story branches (e.g., stm01_08_a.lua, stm01_08_b.lua)
-    # and create appropriate data structures to represent the branching narrative
-
-    branch_groups = {}
-    for episode_id in episodes.keys():
-        # Check if episode ID has a branch suffix (_a, _b, _c, etc.)
-        match = re.match(r"(.+)_[a-z]$", episode_id)
-        if match:
-            base_id = match.group(1)
-            if base_id not in branch_groups:
-                branch_groups[base_id] = []
-            branch_groups[base_id].append(episode_id)
-
-    print(f"Found {len(branch_groups)} story branch groups:")
-    for base_id, branches in branch_groups.items():
-        print(f"  - {base_id}: {', '.join(branches)}")
-
-
 def main():
     """Main function to parse and process story episodes."""
     episodes = get_story_episodes()
@@ -480,9 +411,6 @@ def main():
         print(f"Subtitle: {episode.subtitle}")
         print(f"Description: {episode.description}")
         print(f"Rows: {len(episode.rows)}")
-
-    # Placeholder functions for exporting assets
-    handle_story_branches(episodes)
 
 
 if __name__ == "__main__":

@@ -46,7 +46,7 @@ def _event_avg_activity_ids() -> dict[int, int]:
     return result
 
 
-def _event_story_rows(avg_activity_id: int) -> tuple[str, list[dict[str, Any]]]:
+def _event_story_rows(avg_activity_id: int) -> list[dict[str, Any]]:
     story_chapters = autoload("ActivityStoryChapter")
     story_data = autoload("ActivityStory")
 
@@ -55,11 +55,11 @@ def _event_story_rows(avg_activity_id: int) -> tuple[str, list[dict[str, Any]]]:
             continue
         chapter_id = chapter["ChapterId"]
         rows = [v for v in story_data.values() if v.get("ChapterId") == chapter_id]
-        return "ActivityStory", sorted(rows, key=lambda v: v["Id"])
+        return sorted(rows, key=lambda v: v["Id"])
 
     avg_data = autoload("ActivityAvgLevel")
     rows = [v for v in avg_data.values() if v.get("ActivityId") == avg_activity_id]
-    return "ActivityAvgLevel", sorted(rows, key=lambda v: v["Id"])
+    return sorted(rows, key=lambda v: v["Id"])
 
 
 def _episode_suffix(index: str, sequence: int) -> str:
@@ -81,7 +81,7 @@ def get_event_story_entries() -> list[EventStoryEntry]:
         if event is None:
             print(f"WARNING: Event story has no event metadata for {event_id}")
             continue
-        _, rows = _event_story_rows(avg_activity_id)
+        rows = _event_story_rows(avg_activity_id)
         sequence = 0
         for row in rows:
             story_id = row.get("AvgLuaName") or row.get("StoryId")

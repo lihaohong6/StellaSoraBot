@@ -28,12 +28,6 @@ class StoryExport:
 
 
 @dataclass
-class StoryPageExport:
-    page_title: str
-    episode_id: str
-
-
-@dataclass
 class StoryEntry:
     page_title: str
     episode_id: str
@@ -64,10 +58,6 @@ def get_character_sprite_path(
         # If expression is not a valid number, default to "00"
         expr_num = 0
     return f"{char_name}_{variant}_{expr_num:02d}.png"
-
-
-def character_id_to_speaker_name(char_id: str) -> str:
-    return char_id
 
 
 def with_tyrant_gender_selector(content: str) -> str:
@@ -164,7 +154,7 @@ def story_row_to_messenger(
             or character_id in PROTAGONIST_CHARACTER_IDS
         )
 
-        speaker_name = character_id_to_speaker_name(speaker)
+        speaker_name = speaker
         sprite_name = _sprite_name_for_character_id(character_id, speaker_name)
         sprite_name = _tyrant_sprite_name(sprite_name)
 
@@ -239,10 +229,6 @@ def story_row_to_messenger(
             file_name = get_front_object_file_name(image_name)
             content = f"[[File:{file_name}|200px|link=]]"
             result.extend(["| raw", f"| content :: {content}", ""])
-        return _append_group_option(result, group, option)
-
-    if row.name == "clear":
-        result.extend(["| info", "| text :: [Characters cleared]", ""])
         return _append_group_option(result, group, option)
 
     return result
@@ -380,9 +366,7 @@ def episode_to_messenger_template(
         result.extend(messenger_rows)
 
         if row.name == "dialogue":
-            speaker = row.attributes.get("speaker", "")
-            speaker_name = character_id_to_speaker_name(speaker)
-            current_speaker = speaker_name
+            current_speaker = row.attributes.get("speaker", "")
 
     result.append("}}")
     return "\n".join(result)
@@ -451,7 +435,7 @@ def story_nav_template(
     return "{{" + template_name + "}}"
 
 
-def create_branch_tabs(branch_groups: dict[str, str], base_episode_id: str) -> str:
+def create_branch_tabs(branch_groups: dict[str, str]) -> str:
     if not branch_groups:
         return ""
 
@@ -502,20 +486,6 @@ def process_story_branches(episodes: dict[str, StoryEpisode]) -> dict[str, Story
     return exports
 
 
-def build_story_pages(
-    page_exports: list[StoryPageExport],
-    episodes: dict[str, StoryEpisode],
-) -> dict[str, str]:
-    pages: dict[str, str] = {}
-    for page_export in page_exports:
-        if page_export.episode_id not in episodes:
-            continue
-        pages[page_export.page_title] = with_tyrant_gender_selector(
-            episode_to_messenger_template(episodes[page_export.episode_id])
-        )
-    return pages
-
-
 def save_story_pages(
     pages: dict[str, str],
     summary: str = "update story",
@@ -536,7 +506,7 @@ def main():
 
         if export_data.branches:
             # If it has branches, output the tabbed content
-            print(create_branch_tabs(export_data.branches, first_export_id))
+            print(create_branch_tabs(export_data.branches))
         else:
             # If it's a single story, output the messenger template
             print(export_data.main_content)
