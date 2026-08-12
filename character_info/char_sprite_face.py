@@ -154,7 +154,7 @@ def generate_face_css():
 
             cls = sanitize_css_class(char_name, variant_name)
             lines.append(
-                f".{cls} img {{ width: {width}px; margin-left: {margin_left}px; margin-top: {margin_top}px; }}"
+                f".{cls} .messenger-profile-picture img {{ width: {width}px; margin-left: {margin_left}px; margin-top: {margin_top}px; }}"
             )
         lines.append("")
 
