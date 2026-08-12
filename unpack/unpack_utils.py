@@ -36,11 +36,18 @@ def for_each_object(f: Path, mapper: Callable[[ObjectReader, Environment], T]) -
 
 @cache
 def get_unity3d_files() -> list[Path]:
-    files: dict[str, Path] = dict((f.name, f) for f in unity_asset_dir_1.rglob("*.unity3d"))
-    for f in unity_asset_dir_2.rglob("*.unity3d"):
-        if f.name not in files:
-            files[f.name] = f
-    return list(files.values())
+    # Use the file modified most recently
+    files: dict[str, tuple[int, Path]] = {}
+    for asset_dir in (unity_asset_dir_1, unity_asset_dir_2):
+        if not asset_dir.is_dir():
+            continue
+        for f in asset_dir.rglob("*.unity3d"):
+            key = f.name.casefold()
+            mtime = f.stat().st_mtime_ns
+            existing = files.get(key)
+            if existing is None or mtime > existing[0]:
+                files[key] = (mtime, f)
+    return [f for _, f in files.values()]
 
 
 def asset_map(files: list[Path], mapper: Callable[[ObjectReader, Environment], T], max_workers: int | None = None) -> list[T]:
