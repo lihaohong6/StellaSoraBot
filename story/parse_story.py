@@ -170,6 +170,9 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
 
         def set_talk():
             _, char_id, _, _, _, _, _, text, _ = params
+            # Animation frames the game itself keeps out of the story log.
+            if text.startswith("_NOT_IN_LOG_"):
+                return
             text = process_text(text)
             if text:
                 append_dialogue(char_id, text)
