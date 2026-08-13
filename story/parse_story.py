@@ -321,6 +321,27 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
         def set_personality_choice():
             append_choice_begin(str(params[0]), params[2:5])
 
+        def set_ifunlock_choice():
+            # params[0] = a_1
+            # params[1] = C07_06_bb (reference to episode that needs to be unlocked?)
+            append_choice_begin(str(params[0]), [
+                f"{str(params[1])} unlocked", # How to get pretty name?
+                "Path not discovered yet"
+            ])
+            rows.append(StoryRow("choice_jump", {
+                "choice_id": str(params[0]),
+                "option": "1",
+            }))
+
+        def set_ifunlock_else():
+            rows.append(StoryRow("choice_jump", {
+                "choice_id": str(params[0]),
+                "option": "2",
+            }))
+
+        def set_ifunlock_end():
+            set_choice_end()
+
         def set_phone_msg_choice_begin():
             append_choice_begin(str(params[0]), params[1:7])
 
@@ -372,6 +393,9 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
             "SetChoiceJumpTo": set_choice_jump,
             "SetChoiceRollover": set_choice_rollover,
             "SetChoiceEnd": set_choice_end,
+            "IfUnlock": set_ifunlock_choice,
+            "IfUnlockElse": set_ifunlock_else,
+            "IfUnlockEnd": set_ifunlock_end,
             "SetPersonalityChoice": set_personality_choice,
             "SetPersonalityChoiceJumpTo": set_choice_jump,
             "SetPersonalityChoiceRollover": set_choice_rollover,
