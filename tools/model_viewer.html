@@ -12,7 +12,12 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg);
     color: var(--text); font: 13px/1.45 ui-sans-serif, system-ui, sans-serif; }
-  #stage { position: fixed; inset: 0; }
+  /* A canvas is a replaced element, so an absolutely positioned one with
+     width:auto lays out at its intrinsic size — the drawing buffer, which is
+     devicePixelRatio times the window. On a HiDPI screen inset:0 alone leaves
+     it that big, anchored top left, and everything but the corner is off
+     screen. The size has to be stated. */
+  #stage { position: fixed; inset: 0; width: 100%; height: 100%; }
   #panel {
     position: fixed; top: 12px; left: 12px; width: 288px; max-height: calc(100dvh - 24px);
     display: flex; flex-direction: column; padding: 12px;
@@ -60,7 +65,8 @@
   #stats { position: fixed; right: 12px; bottom: 12px; color: var(--muted);
     font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
   #msg { position: fixed; inset: 0; display: grid; place-items: center;
-    pointer-events: none; color: var(--muted); }
+    pointer-events: none; color: var(--muted); text-align: center;
+    white-space: pre-line; padding: 0 16px; }
 </style>
 </head>
 <body>
@@ -85,7 +91,9 @@
       <label class="row"><span>Speed</span><input type="range" id="speed" min="0" max="200" value="100"><output></output></label>
     </details>
 
-    <details open id="lightBox">
+    <!-- Light and Toon start folded: neither reaches the default Base colour
+         only view. Picking a view that does unfolds them. -->
+    <details id="lightBox">
       <summary>Light</summary>
       <label class="row"><span>Azimuth</span><input type="range" id="azimuth" min="-180" max="180" value="35"><output></output></label>
       <label class="row"><span>Elevation</span><input type="range" id="elevation" min="-89" max="89" value="28"><output></output></label>
@@ -95,7 +103,7 @@
       </div>
     </details>
 
-    <details open id="toonBox">
+    <details id="toonBox">
       <summary>Toon</summary>
       <label class="row"><span>Shadow depth</span><input type="range" id="shadowDepth" min="10" max="140" value="35"><output></output></label>
       <label class="row"><span>Shadow bias</span><input type="range" id="attenScale" min="0" max="300" value="100"><output></output></label>
@@ -110,7 +118,9 @@
 
     <details open id="outlineBox">
       <summary>Outline</summary>
-      <label class="row"><span>Width</span><input type="range" id="outlineWidth" min="0" max="400" value="100"><output></output></label>
+      <!-- 100% is exactly what _OutlineWidth says, but the game thickens the
+           hull with distance and the viewer sits closer than it ever does. -->
+      <label class="row"><span>Width</span><input type="range" id="outlineWidth" min="0" max="400" value="25"><output></output></label>
       <div class="checks">
         <label class="row"><span>Enabled</span><input type="checkbox" id="outline" checked></label>
       </div>
@@ -119,15 +129,15 @@
     <details open>
       <summary>View</summary>
       <select id="mode">
-        <option value="toon">Toon (shader)</option>
         <option value="base">Base colour only</option>
+        <option value="toon">Toon (shader)</option>
         <option value="ramp">Light ramp</option>
         <option value="normal">Normals</option>
         <option value="mask">Mask map (R/G/B)</option>
       </select>
       <div class="checks">
-        <label class="row"><span>Brows over hair</span><input type="checkbox" id="browOver" checked></label>
-        <label class="row"><span>Expressions</span><input type="checkbox" id="emotes"></label>
+        <label class="row" title="Draw the eyebrows through the fringe, as some of the game's cutscene cameras do."><span>Brows over hair</span><input type="checkbox" id="browOver"></label>
+        <label class="row" title="Parts the game keeps off and swaps in by script: cutscene props, alternate weapons, emote quads. They hang off sockets no clip animates, so they drift when one plays. Greyed out for a model that ships none. Facial expressions are blend shapes and need no switch — they play with the clips marked &quot;face&quot;."><span>Swap-in parts</span><input type="checkbox" id="parts"></label>
         <label class="row"><span>Auto-rotate</span><input type="checkbox" id="spin"></label>
         <label class="row"><span>Skeleton</span><input type="checkbox" id="skeleton"></label>
         <label class="row"><span>Background</span><input type="color" id="bg" value="#14161c"></label>
@@ -157,6 +167,7 @@ const MODELS = '../assets/assetbundles/actor3d/';
 
 const TOON_VERT = /* glsl */`
 #include <common>
+#include <morphtarget_pars_vertex>
 #include <skinning_pars_vertex>
 
 varying vec2 vUv;
@@ -166,9 +177,11 @@ varying vec3 vViewW;
 void main() {
   vUv = uv;
   vec3 objectNormal = normal;
+  #include <morphnormal_vertex>
   #include <skinbase_vertex>
   #include <skinnormal_vertex>
   vec3 transformed = position;
+  #include <morphtarget_vertex>
   #include <skinning_vertex>
 
   vec4 worldPosition = modelMatrix * vec4(transformed, 1.0);
@@ -320,6 +333,7 @@ void main() {
 // mesh tangent (exported as _SMOOTHNORMAL) so hard edges do not split the hull.
 const OUTLINE_VERT = /* glsl */`
 #include <common>
+#include <morphtarget_pars_vertex>
 #include <skinning_pars_vertex>
 
 attribute vec3 smoothNormal;
@@ -330,6 +344,7 @@ void main() {
   #include <skinbase_vertex>
   #include <skinnormal_vertex>
   vec3 transformed = position;
+  #include <morphtarget_vertex>
   #include <skinning_vertex>
 
   vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
@@ -374,7 +389,7 @@ scene.add(grid);
 
 const ui = id => document.getElementById(id);
 const state = {
-  materials: [], outlines: [], skeletons: [], model: null,
+  materials: [], outlines: [], skeletons: [], optional: [], model: null,
   lightDirection: new THREE.Vector3(),
   clips: [], clipCache: new Map(), mixer: null, action: null,
   playing: true, animToken: 0, rest: [], head: null,
@@ -483,6 +498,10 @@ function buildOutlineMaterial(toon) {
     vertexColors: true, side: THREE.BackSide,
   });
   material.userData.baseWidth = toon.userData.outlineWidth * 0.002;
+  // The face has only the jawline to spare: past what _OutlineWidth says, the
+  // hull starts eating the mouth corners and the eyelids. It stops there while
+  // the slider goes on thickening the rest.
+  material.userData.maxWidth = toon.userData.charSurface === 3 ? 1 : Infinity;
   return material;
 }
 
@@ -499,6 +518,7 @@ async function loadModel(url) {
     });
   }
   state.materials = []; state.outlines = []; state.skeletons = [];
+  state.optional = [];
 
   const gltf = await loader.loadAsync(url);
   const parser = gltf.parser;
@@ -548,13 +568,19 @@ async function loadModel(url) {
     if (toon.userData.charSurface === 1) {   // eyebrow: drawn over hair in game
       mesh.renderOrder = 20;
     }
-    // face11_sp01 etc. are expression overlay quads the game swaps in at runtime.
-    mesh.userData.isEmoteOverlay = /_sp\d|emote/i.test(`${mesh.name} ${toon.name}`);
+    // Parts outside the model's high-detail LOD group — props, spare weapons,
+    // emote quads — are ones the game enables by script. Start them hidden, and
+    // do it before measureModel so a stray phone cannot skew the framing.
+    if (mesh.userData.optional) {
+      mesh.visible = false;
+      state.optional.push(mesh);
+    }
 
-    // Faces get no inverted hull in game: at head scale the shell swallows the
-    // nose and mouth. Their linework comes from the diffuse texture instead.
-    if (mesh.userData.isEmoteOverlay || toon.userData.charSurface === 1
-        || toon.userData.charSurface === 3) continue;
+    // Overlay quads sit flat on the face and eyebrows are decals over the hair:
+    // a hull on either is all artefact. The face itself keeps one — without it
+    // the chin dissolves into the neck, both being the same shade of skin.
+    if (/_sp\d|emote/i.test(`${mesh.name} ${toon.name}`)
+        || toon.userData.charSurface === 1) continue;
 
     const outline = mesh.isSkinnedMesh
       ? new THREE.SkinnedMesh(geometry, buildOutlineMaterial(toon))
@@ -565,6 +591,8 @@ async function loadModel(url) {
     }
     outline.frustumCulled = false;
     outline.renderOrder = -1;
+    outline.userData.isOutline = true;
+    outline.userData.source = mesh;
     mesh.parent.add(outline);
     state.outlines.push(outline);
   }
@@ -572,14 +600,8 @@ async function loadModel(url) {
   scene.add(root);
   state.model = root;
   captureRestPose(root);
+  measureModel();
   await loadClipList(url);
-
-  const box = new THREE.Box3().setFromObject(root);
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
-  grid.position.y = box.min.y;
-  grid.scale.setScalar(Math.max(1, size.y / 1.6));
-  state.bounds = { center, size };
   frameModel(false);
 
   document.getElementById('stats').textContent =
@@ -636,7 +658,8 @@ async function loadClipList(modelUrl) {
   ui('animBox').hidden = !state.clips.length;
   ui('clip').innerHTML = ['<option value="">Bind pose — no animation</option>']
     .concat(state.clips.map((c, i) =>
-      `<option value="${i}">${c.name} · ${c.duration.toFixed(2)}s</option>`)).join('');
+      `<option value="${i}">${c.name} · ${c.duration.toFixed(2)}s` +
+      `${c.face ? ' · face' : ''}</option>`)).join('');
   fitPanel();
 
   // Idle is how the character reads in game, so open on it rather than on the
@@ -644,7 +667,7 @@ async function loadClipList(modelUrl) {
   const idle = state.clips.findIndex(c => /_idle$/i.test(c.name));
   if (idle >= 0) {
     ui('clip').value = String(idle);
-    playClip(idle).catch(reportError);
+    playClip(idle).then(reframe).catch(reportError);
   }
 }
 
@@ -693,11 +716,33 @@ async function playClip(index) {
 
   ui('animStatus').textContent = '';
   state.mixer = new THREE.AnimationMixer(state.model);
-  state.action = state.mixer.clipAction(clip);
+  state.action = state.mixer.clipAction(retargetMorphTracks(clip));
   state.action.play();
   setPlaying(true);
   state.mixer.update(0);
   updateHeadAxes();
+}
+
+// A clip names its blend shape track after the mesh in the model, which glTF
+// splits into one object per material — every one of them carries the shapes and
+// so needs its own track.
+function retargetMorphTracks(clip) {
+  const tracks = [];
+  for (const track of clip.tracks) {
+    if (!track.name.endsWith('.morphTargetInfluences')) {
+      tracks.push(track);
+      continue;
+    }
+    const node = state.model.getObjectByName(
+      track.name.slice(0, track.name.lastIndexOf('.')));
+    node?.traverse(o => {
+      if (!o.morphTargetInfluences) return;
+      const copy = track.clone();
+      copy.name = `${o.name}.morphTargetInfluences`;
+      tracks.push(copy);
+    });
+  }
+  return new THREE.AnimationClip(clip.name, clip.duration, tracks);
 }
 
 function setPlaying(playing) {
@@ -747,6 +792,46 @@ function updateProjection() {
     camera.clearViewOffset();
   }
   camera.updateProjectionMatrix();
+}
+
+// Box3.setFromObject does ask a SkinnedMesh for its own, skinned box — but it
+// caches the answer, and the pose it would measure at load is the prefab's, in
+// which the weapons sit unposed at the origin, a metre from where any clip puts
+// them. So measure it here, and again once the opening clip has posed the model.
+function measureModel() {
+  const box = new THREE.Box3();
+  const meshBox = new THREE.Box3();
+  state.model.updateMatrixWorld(true);
+  state.model.traverse(o => {
+    if (!o.isMesh || o.userData.isOutline || !o.visible) return;
+    if (o.isSkinnedMesh) {
+      o.computeBoundingBox();
+      meshBox.copy(o.boundingBox);
+    } else {
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      meshBox.copy(o.geometry.boundingBox);
+    }
+    box.union(meshBox.applyMatrix4(o.matrixWorld));
+  });
+  state.bounds = { center: box.getCenter(new THREE.Vector3()),
+                   size: box.getSize(new THREE.Vector3()) };
+  grid.position.y = box.min.y;
+  grid.scale.setScalar(Math.max(1, state.bounds.size.y / 1.6));
+}
+
+// Whether the view is still the one we chose, so that a re-fit never throws away
+// a zoom or an orbit the user set up themselves.
+function cameraPristine() {
+  return !!state.fitDistance && !!state.bounds
+    && Math.abs(camera.position.distanceTo(controls.target) - state.fitDistance)
+       < state.fitDistance * 0.02
+    && state.bounds.center.distanceTo(controls.target) < state.fitDistance * 0.02;
+}
+
+function reframe() {
+  if (!cameraPristine()) return;
+  measureModel();
+  frameModel(true);
 }
 
 function frameModel(keepOrientation) {
@@ -816,22 +901,23 @@ function applyUi() {
     }
   }
 
+  // Ahead of the outlines: theirs follows the mesh they were built from.
+  ui('parts').disabled = !state.optional.length;
+  for (const o of state.optional) o.visible = ui('parts').checked;
+
+  // The outline is geometry rather than shading, so it belongs to the base
+  // colour view as much as to the toon one; the remaining modes are diagnostic.
+  const shaded = mode === MODES.toon || mode === MODES.base;
   const outlineOn = ui('outline').checked;
   const outlineWidth = +ui('outlineWidth').value / 100;
   for (const o of state.outlines) {
-    o.visible = outlineOn && mode === 0;
-    o.material.uniforms.outlineWidth.value = o.material.userData.baseWidth * outlineWidth;
-  }
-
-  const showEmotes = ui('emotes').checked;
-  if (state.model) {
-    state.model.traverse(o => {
-      if (o.isMesh && o.userData.isEmoteOverlay) o.visible = showEmotes;
-    });
+    o.visible = outlineOn && shaded && o.userData.source.visible;
+    o.material.uniforms.outlineWidth.value = o.material.userData.baseWidth
+      * Math.min(outlineWidth, o.material.userData.maxWidth);
   }
 
   scene.background = new THREE.Color(ui('bg').value);
-  grid.visible = mode === 0;
+  grid.visible = shaded;
   controls.autoRotate = ui('spin').checked;
   controls.autoRotateSpeed = 1.6;
 
@@ -847,6 +933,16 @@ for (const el of document.querySelectorAll('#panel input, #panel select')) {
   el.addEventListener('input', applyUi);
 }
 ui('reset').addEventListener('click', resetCamera);
+// Light and Toon are folded away because the opening view ignores them. The
+// first switch to a view that does use them brings them back; fold them again
+// after that and they stay folded.
+let unfoldedShading = false;
+ui('mode').addEventListener('change', () => {
+  const mode = ui('mode').value;
+  if (unfoldedShading || (mode !== 'toon' && mode !== 'ramp')) return;
+  unfoldedShading = true;
+  ui('lightBox').open = ui('toonBox').open = true;
+});
 // '' is the bind-pose entry, and would coerce to clip 0.
 ui('clip').addEventListener('change', e =>
   playClip(e.target.value === '' ? -1 : +e.target.value).catch(reportError));
@@ -862,8 +958,7 @@ ui('scrub').addEventListener('input', () => {
   updateClock();
 });
 ui('model').addEventListener('change', e => {
-  document.getElementById('msg').style.display = '';
-  document.getElementById('msg').textContent = 'loading…';
+  showMessage('loading…');
   loadModel(e.target.value).catch(reportError);
 });
 
@@ -882,10 +977,14 @@ ui('skeleton').addEventListener('input', () => {
   });
 });
 
-function reportError(err) {
+function showMessage(text) {
   const msg = document.getElementById('msg');
   msg.style.display = '';
-  msg.textContent = String(err.message || err);
+  msg.textContent = text;
+}
+
+function reportError(err) {
+  showMessage(String(err.message || err));
   console.error(err);
 }
 
@@ -893,12 +992,7 @@ function reportError(err) {
 
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
-  // Re-fit only while the view is still the one we chose, so a resize never
-  // throws away a zoom or pan the user set up themselves.
-  const pristine = state.fitDistance
-    && Math.abs(camera.position.distanceTo(controls.target) - state.fitDistance)
-       < state.fitDistance * 0.02
-    && state.bounds.center.distanceTo(controls.target) < state.fitDistance * 0.02;
+  const pristine = cameraPristine();
   updateProjection();
   if (pristine) frameModel(true);
   fitPanel();
@@ -918,11 +1012,16 @@ renderer.setAnimationLoop(timestamp => {
 });
 
 (async () => {
-  let entries;
+  let entries = [];
   try {
-    entries = await (await fetch(MODELS + 'index.json')).json();
-  } catch {
-    entries = [{ id: '13301', file: 'char_13301.glb' }];
+    const response = await fetch(MODELS + 'index.json');
+    if (response.ok) entries = await response.json();
+  } catch { /* no index at all — same story as an empty one */ }
+  if (!entries.length) {
+    showMessage(`No models in ${MODELS}\n\nExport some first:\n` +
+      'uv run -m unpack.unpack_model\n\n' +
+      'and serve the repo root, not tools/.');
+    return;
   }
   const select = ui('model');
   select.innerHTML = entries

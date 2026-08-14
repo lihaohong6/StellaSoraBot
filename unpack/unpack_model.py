@@ -11,10 +11,12 @@ material `extras` for `tools/model_viewer.html`.
 import argparse
 import io
 import json
+import os
 import re
 import struct
+import zlib
 from concurrent.futures import ProcessPoolExecutor
-from functools import cache
+from functools import cache, partial
 from pathlib import Path
 from typing import Any, Optional
 
@@ -193,6 +195,11 @@ def load_character_env(char_id: str,
     return env
 
 
+def blend_shape_channels(mesh: Mesh) -> list[Any]:
+    """The mesh's blend shape channels, in the order glTF morph targets take."""
+    return list(getattr(getattr(mesh, "m_Shapes", None), "channels", None) or [])
+
+
 def find_prefab_root(env: UnityPy.Environment, char_id: str) -> Transform:
     transforms = [o.read() for o in env.objects if o.type.name == "Transform"]
     roots = {t.m_GameObject.read().m_Name: t for t in transforms
@@ -201,6 +208,25 @@ def find_prefab_root(env: UnityPy.Environment, char_id: str) -> Transform:
         if name in roots:
             return roots[name]
     raise LookupError(f"no model prefab among {sorted(roots)}")
+
+
+def renderers_shown_by_default(root: Transform) -> set[int]:
+    """Path ids of the renderers the game shows when the model spawns.
+
+    `CustomModelLODGroup` on the prefab root sorts the renderers into a high-
+    and a low-detail set, plus a `modelGroup` of parts the runtime swaps in on
+    its own: cutscene props (a phone, a cat, glasses), alternate weapons, and
+    the emote quads. Only the high-detail set is on to begin with. Some of the
+    swap-ins ship with the GameObject already inactive and some do not, so the
+    group is the reliable signal, not `m_IsActive`.
+    """
+    for component in root.m_GameObject.read().m_Component:
+        if component.component.type.name != "MonoBehaviour":
+            continue
+        tree = component.component.read().object_reader.read_typetree()
+        if "highLevelGroup" in tree:
+            return {p["m_PathID"] for p in tree["highLevelGroup"]}
+    return set()
 
 
 class CharacterExporter:
@@ -212,6 +238,7 @@ class CharacterExporter:
         self.texture_cache: dict[int, Optional[int]] = {}
         self.material_cache: dict[int, Optional[int]] = {}
         self.env = load_character_env(char_id)
+        self.shown: set[int] = set()
 
     def _add_node(self, transform: Transform) -> int:
         game_object = transform.m_GameObject.read()
@@ -355,6 +382,7 @@ class CharacterExporter:
                 smooth, "VEC3", COMPONENT_FLOAT, TARGET_ARRAY)
 
         skin_index = self._add_skin(renderer, mesh, handler, vertex_count, attributes)
+        targets, target_names = self._blend_shapes(mesh, vertex_count)
 
         primitives = []
         for i, triangles in enumerate(handler.get_triangles()):
@@ -363,13 +391,24 @@ class CharacterExporter:
                          "indices": self.gltf.add_accessor(
                              indices.ravel().copy(), "SCALAR",
                              COMPONENT_UINT, TARGET_ELEMENT)}
+            if targets:
+                primitive["targets"] = targets
             if i < len(renderer.m_Materials) and renderer.m_Materials[i].m_PathID:
                 material_index = self._add_material(renderer.m_Materials[i])
                 if material_index is not None:
                     primitive["material"] = material_index
             primitives.append(primitive)
 
-        self.gltf.root["meshes"].append({"name": mesh.m_Name, "primitives": primitives})
+        gltf_mesh: dict[str, Any] = {"name": mesh.m_Name, "primitives": primitives}
+        extras: dict[str, Any] = {}
+        if targets:
+            gltf_mesh["weights"] = [0.0] * len(targets)
+            extras["targetNames"] = target_names
+        if self.shown and renderer.object_reader.path_id not in self.shown:
+            extras["optional"] = True
+        if extras:
+            gltf_mesh["extras"] = extras
+        self.gltf.root["meshes"].append(gltf_mesh)
         transform_id = next(c.component.m_PathID for c in game_object.m_Component
                             if c.component.m_PathID in self.node_of_transform)
         node = self.gltf.root["nodes"][self.node_of_transform[transform_id]]
@@ -378,6 +417,30 @@ class CharacterExporter:
             node["skin"] = skin_index
             node["translation"], node["scale"] = [0, 0, 0], [1, 1, 1]
             node["rotation"] = [0, 0, 0, 1]
+
+    def _blend_shapes(self, mesh: Mesh,
+                      vertex_count: int) -> tuple[list[dict[str, int]], list[str]]:
+        """glTF morph targets for the mesh's blend shapes — the face expressions.
+
+        Unity keeps the deltas sparse, as runs of (vertex index, offset) shared
+        by every shape in the mesh; glTF wants one dense array per target.
+        """
+        targets: list[dict[str, int]] = []
+        names: list[str] = []
+        for channel in blend_shape_channels(mesh):
+            # A channel can hold several frames, in-betweens on the way to the
+            # full shape; the last one is the shape as the clips address it.
+            shape = mesh.m_Shapes.shapes[channel.frameIndex + channel.frameCount - 1]
+            deltas = np.zeros((vertex_count, 3), np.float32)
+            for i in range(shape.firstVertex, shape.firstVertex + shape.vertexCount):
+                vertex = mesh.m_Shapes.vertices[i]
+                if vertex.index < vertex_count:
+                    deltas[vertex.index] = (-vertex.vertex.x, vertex.vertex.y,
+                                            vertex.vertex.z)
+            targets.append({"POSITION": self.gltf.add_accessor(
+                deltas, "VEC3", COMPONENT_FLOAT, TARGET_ARRAY, minmax=True)})
+            names.append(channel.name)
+        return targets, names
 
     def _add_skin(self, renderer: SkinnedMeshRenderer, mesh: Mesh,
                   handler: MeshHandler, vertex_count: int,
@@ -414,6 +477,7 @@ class CharacterExporter:
     def export(self, out_path: Path) -> Path:
         root = find_prefab_root(self.env, self.char_id)
         self.gltf.root["scenes"][0]["nodes"] = [self._add_node(root)]
+        self.shown = renderers_shown_by_default(root)
         for renderer in self._collect_renderers(root):
             self._add_renderer(renderer)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -436,6 +500,7 @@ def write_index(out_dir: Path) -> None:
 
 
 CLASS_TRANSFORM = 4
+CLASS_SKINNED_MESH_RENDERER = 137
 # Mecanim's kBindTransform* attributes, and how many curves each one spans.
 ATTRIBUTE_WIDTH = {1: 3, 2: 4, 3: 3, 4: 3}    # position, rotation, scale, euler
 ATTRIBUTE_PROPERTY = {1: "translation", 2: "rotation", 3: "scale", 4: "rotation"}
@@ -443,7 +508,7 @@ ATTRIBUTE_PROPERTY = {1: "translation", 2: "rotation", 3: "scale", 4: "rotation"
 # How far a reconstructed track may stray, both when refining the sample grid and
 # when decimating it again. Positions are in metres on a ~1.6 m character, and
 # 4e-3 on a quaternion component is under half a degree.
-TOLERANCE = {"translation": 5e-4, "rotation": 4e-3, "scale": 2e-3}
+TOLERANCE = {"translation": 5e-4, "rotation": 4e-3, "scale": 2e-3, "weights": 5e-3}
 
 
 class Curve:
@@ -549,28 +614,30 @@ def clip_bindings(clip: AnimationClip) -> list[tuple[Any, int, int]]:
 
 def decimate(times: np.ndarray, values: np.ndarray,
              tolerance: float) -> tuple[np.ndarray, np.ndarray]:
-    """Drop keys that a straight line between their neighbours already reproduces."""
+    """Drop keys that a straight line between their neighbours already reproduces.
+
+    Growing each run a key at a time and re-measuring the whole chord costs
+    O(n^2), and bones are keyed on every frame. Reading it as a slope interval
+    instead takes one pass: a chord from the anchor reproduces the key at `t`
+    when its slope is within `tolerance / (t - anchor)` of that key's own, so
+    intersecting those intervals as the run grows — a running max and min — says
+    where it has to stop. Same keys out; a character's clips take 8s instead of
+    19s.
+    """
     count = len(times)
     if count < 3:
         return times, values
     keep, anchor = [0], 0
     while anchor < count - 1:
-        # Longest run from the anchor whose interior stays within tolerance.
-        end = anchor + 1
-        while end < count - 1:
-            candidate = end + 1
-            span = times[candidate] - times[anchor]
-            if span <= 0:
-                break
-            weight = ((times[anchor + 1:candidate] - times[anchor])
-                      / span)[:, None]
-            approximated = (values[anchor] * (1.0 - weight)
-                            + values[candidate] * weight)
-            if np.abs(approximated - values[anchor + 1:candidate]).max() > tolerance:
-                break
-            end = candidate
-        keep.append(end)
-        anchor = end
+        span = (times[anchor + 1:] - times[anchor])[:, None]
+        slope = (values[anchor + 1:] - values[anchor]) / span
+        margin = tolerance / span
+        # Every key up to but not including the candidate constrains the chord.
+        low = np.maximum.accumulate(slope - margin, axis=0)[:-1]
+        high = np.minimum.accumulate(slope + margin, axis=0)[:-1]
+        outside = np.flatnonzero(((slope[1:] < low) | (slope[1:] > high)).any(axis=1))
+        anchor += 1 + (outside[0] if len(outside) else len(slope) - 1)
+        keep.append(anchor)
     index = np.array(keep)
     return times[index], values[index]
 
@@ -578,7 +645,7 @@ def decimate(times: np.ndarray, values: np.ndarray,
 class AnimationExporter:
     def __init__(self, char_id: str) -> None:
         self.char_id = char_id
-        self.rest = _skeleton_rest_pose(char_id)
+        self.rest, self.shapes = _skeleton_rest_pose(char_id)
         self.env = self._load_environment()
         self.tos = self._read_tos()
 
@@ -618,8 +685,12 @@ class AnimationExporter:
         animation = gltf.root["animations"][0]
         nodes: dict[str, int] = {}
         inputs: dict[bytes, int] = {}
+        morphs: dict[str, dict[int, Curve]] = {}
 
         for binding, first, width in clip_bindings(clip):
+            if binding.typeID == CLASS_SKINNED_MESH_RENDERER:
+                self._collect_morph(binding, curves.get(first), morphs)
+                continue
             if binding.typeID != CLASS_TRANSFORM or binding.attribute not in ATTRIBUTE_WIDTH:
                 continue
             path = self.tos.get(binding.path)
@@ -655,10 +726,48 @@ class AnimationExporter:
                 "target": {"node": nodes[path], "path": prop},
             })
 
+        for path, animated in morphs.items():
+            names = self.shapes[path]
+            columns = sorted(animated)
+            # Unity keys blend shape weights as percentages; glTF wants unit
+            # fractions, and every shape in one output rather than a curve each.
+            times, values = self._sample([animated[c] for c in columns],
+                                         start, duration, rate, 0.5)
+            weights = np.zeros((len(times), len(names)), np.float32)
+            weights[:, columns] = values / 100.0
+            times, weights = decimate(times, weights, TOLERANCE["weights"])
+            animation["samplers"].append({
+                "input": _shared_input(gltf, inputs, times),
+                "output": gltf.add_accessor(weights.reshape(-1, 1).copy(), "SCALAR",
+                                            COMPONENT_FLOAT),
+                "interpolation": "LINEAR",
+            })
+            animation["channels"].append({
+                "sampler": len(animation["samplers"]) - 1,
+                "target": {"node": _morph_node(gltf, nodes, path, names),
+                           "path": "weights"},
+            })
+
         if not animation["channels"]:
             return None
         gltf.root["scenes"][0]["nodes"] = list(range(len(gltf.root["nodes"])))
         return gltf
+
+    def _collect_morph(self, binding: Any, curve: Optional[Curve],
+                       morphs: dict[str, dict[int, Curve]]) -> None:
+        """File a SkinnedMeshRenderer binding under the shape it drives.
+
+        A generic binding names its attribute by CRC32, which for a blend shape
+        is exactly the hash the mesh already stores against the channel.
+        """
+        path = self.tos.get(binding.path)
+        names = self.shapes.get(path) if path else None
+        if names is None or curve is None:
+            return
+        for index, name in enumerate(names):
+            if zlib.crc32(name.encode()) & 0xFFFFFFFF == binding.attribute:
+                morphs.setdefault(path, {})[index] = curve
+                return
 
     @staticmethod
     def _sample(components: list[Curve], start: float, duration: float, rate: float,
@@ -731,6 +840,32 @@ def _shared_input(gltf: GltfBuilder, cache: dict[bytes, int],
     return cache[key]
 
 
+def _morph_node(gltf: GltfBuilder, nodes: dict[str, int], name: str,
+                shapes: list[str]) -> int:
+    """A stand-in for the mesh whose blend shape weights the clip drives.
+
+    A weights channel may only target a node that has morph targets, and
+    three.js builds no track for one that has none, so the clip carries a
+    degenerate triangle with the right shape count. The node takes the name of
+    the mesh in the model, which is what the viewer retargets the track by — and
+    so has to be the node the clip already moves, if it moves that one at all.
+    """
+    origin = gltf.add_accessor(np.zeros((3, 3), np.float32), "VEC3",
+                               COMPONENT_FLOAT, TARGET_ARRAY, minmax=True)
+    gltf.root["meshes"].append({
+        "name": f"{name}_shapes",
+        "primitives": [{"attributes": {"POSITION": origin},
+                        "targets": [{"POSITION": origin}] * len(shapes)}],
+        "weights": [0.0] * len(shapes),
+        "extras": {"targetNames": shapes},
+    })
+    if name not in nodes:
+        nodes[name] = len(gltf.root["nodes"])
+        gltf.root["nodes"].append({"name": name.rsplit("/", 1)[-1]})
+    gltf.root["nodes"][nodes[name]]["mesh"] = len(gltf.root["meshes"]) - 1
+    return nodes[name]
+
+
 def _output_accessor(gltf: GltfBuilder, prop: str, values: np.ndarray) -> int:
     if prop == "rotation":
         # Quaternion components are bounded, so normalised shorts halve the file
@@ -740,13 +875,20 @@ def _output_accessor(gltf: GltfBuilder, prop: str, values: np.ndarray) -> int:
     return gltf.add_accessor(values.astype(np.float32), "VEC3", COMPONENT_FLOAT)
 
 
-def _skeleton_rest_pose(char_id: str) -> dict[str, dict[str, Any]]:
-    """Bone path -> node name and rest TRS, as the model .glb exports them."""
+def _skeleton_rest_pose(
+        char_id: str) -> tuple[dict[str, dict[str, Any]], dict[str, list[str]]]:
+    """What a clip has to be retargeted against, read off the model bundle.
+
+    Bone path -> node name and rest TRS, as the model .glb exports them, and
+    mesh path -> blend shape names, in morph target order.
+    """
     env = load_character_env(char_id, parts=("models",))
     rest: dict[str, dict[str, Any]] = {}
+    shapes: dict[str, list[str]] = {}
 
     def walk(transform: Transform, prefix: str) -> None:
-        name = transform.m_GameObject.read().m_Name
+        game_object = transform.m_GameObject.read()
+        name = game_object.m_Name
         path = f"{prefix}/{name}" if prefix else name
         p, q, s = (transform.m_LocalPosition, transform.m_LocalRotation,
                    transform.m_LocalScale)
@@ -754,13 +896,21 @@ def _skeleton_rest_pose(char_id: str) -> dict[str, dict[str, Any]]:
                       "translation": [-p.x, p.y, p.z],
                       "rotation": [q.x, -q.y, -q.z, q.w],
                       "scale": [s.x, s.y, s.z]}
+        for component in game_object.m_Component:
+            if component.component.type.name != "SkinnedMeshRenderer":
+                continue
+            renderer: SkinnedMeshRenderer = component.component.read()
+            if renderer.m_Mesh and renderer.m_Mesh.m_PathID:
+                names = [c.name for c in blend_shape_channels(renderer.m_Mesh.read())]
+                if names:
+                    shapes[path] = names
         for child in transform.m_Children:
             walk(child.read(), path)
 
     # Paths in m_TOS are relative to the prefab root, which is not itself in them.
     for child in find_prefab_root(env, char_id).m_Children:
         walk(child.read(), "")
-    return rest
+    return rest, shapes
 
 
 def export_animations(char_id: str, out_dir: Path) -> list[dict[str, Any]]:
@@ -779,6 +929,8 @@ def export_animations(char_id: str, out_dir: Path) -> list[dict[str, Any]]:
         manifest.append({
             "name": clip.m_Name,
             "file": f"anim/char_{char_id}/{path.name}",
+            "face": any(channel["target"]["path"] == "weights"
+                        for channel in gltf.root["animations"][0]["channels"]),
             "duration": round(float(clip.m_MuscleClip.m_StopTime
                                     - clip.m_MuscleClip.m_StartTime), 4),
             "loop": bool(clip.m_MuscleClip.m_LoopTime),
@@ -789,10 +941,34 @@ def export_animations(char_id: str, out_dir: Path) -> list[dict[str, Any]]:
     return manifest
 
 
+def _export_character(char_id: str, output_root: Path, animations: bool,
+                      overwrite: bool) -> list[str]:
+    """One character's model and clips, in a worker process. Returns its output."""
+    model_path = output_root / f"char_{char_id}.glb"
+    lines: list[str] = []
+    if overwrite or not model_path.exists():
+        try:
+            CharacterExporter(char_id).export(model_path)
+            lines.append(f"{model_path.name}  {model_path.stat().st_size / 1e6:.2f} MB")
+        except Exception as exc:
+            return lines + [f"char_{char_id}: {type(exc).__name__}: {exc}"]
+    if not animations:
+        return lines
+    if not overwrite and (output_root / f"char_{char_id}.anims.json").exists():
+        return lines
+    try:
+        manifest = export_animations(char_id, output_root)
+    except Exception as exc:
+        return lines + [f"char_{char_id} animations: {type(exc).__name__}: {exc}"]
+    total = sum(clip["bytes"] for clip in manifest)
+    return lines + [f"char_{char_id}: {len(manifest)} clips, {total / 1e6:.2f} MB"]
+
+
 def export_3d_models(char_ids: set[str] | None = None,
                      output_root: Path | None = None,
                      animations: bool = True,
-                     overwrite: bool = False) -> None:
+                     overwrite: bool = False,
+                     jobs: int | None = None) -> None:
     output_root = output_root or model_root
     output_root.mkdir(parents=True, exist_ok=True)
     available = set(available_character_ids())
@@ -802,27 +978,21 @@ def export_3d_models(char_ids: set[str] | None = None,
         for char_id in sorted(char_ids - available):
             print(f"WARNING: No char_{char_id}_models bundle found")
         char_ids &= available
+    if not char_ids:
+        return
 
-    for char_id in sorted(char_ids):
-        model_path = output_root / f"char_{char_id}.glb"
-        if overwrite or not model_path.exists():
-            try:
-                CharacterExporter(char_id).export(model_path)
-                print(f"{model_path.name}  {model_path.stat().st_size / 1e6:.2f} MB")
-            except Exception as exc:
-                print(f"char_{char_id}: {type(exc).__name__}: {exc}")
-                continue
-        if not animations:
-            continue
-        if not overwrite and (output_root / f"char_{char_id}.anims.json").exists():
-            continue
-        try:
-            manifest = export_animations(char_id, output_root)
-        except Exception as exc:
-            print(f"char_{char_id} animations: {type(exc).__name__}: {exc}")
-            continue
-        total = sum(clip["bytes"] for clip in manifest)
-        print(f"char_{char_id}: {len(manifest)} clips, {total / 1e6:.2f} MB")
+    # Build the CAB index here rather than letting every worker race to write it.
+    get_cab_index()
+    # Characters are independent, and one peaks near 2 GB that UnityPy does not
+    # hand back, so give each a process of its own rather than let a worker
+    # accumulate several. A fresh one costs half a second against half a minute.
+    workers = min(jobs or max(os.cpu_count() - 4, 4), len(char_ids))
+    work = partial(_export_character, output_root=output_root,
+                   animations=animations, overwrite=overwrite)
+    with ProcessPoolExecutor(max_workers=workers, max_tasks_per_child=1) as pool:
+        for lines in pool.map(work, sorted(char_ids)):
+            for line in lines:
+                print(line)
     write_index(output_root)
 
 
@@ -835,6 +1005,8 @@ def _parse_args() -> argparse.Namespace:
                         help="Export models only, skipping their clips")
     parser.add_argument("--overwrite", action="store_true",
                         help="Re-export even if output already exists")
+    parser.add_argument("--jobs", type=int, default=None,
+                        help="Characters to export at once (default: cores - 4)")
     return parser.parse_args()
 
 
@@ -843,7 +1015,8 @@ def main() -> None:
     export_3d_models(char_ids=set(args.char_ids) if args.char_ids else None,
                      output_root=args.out,
                      animations=not args.no_animations,
-                     overwrite=args.overwrite)
+                     overwrite=args.overwrite,
+                     jobs=args.jobs)
 
 
 if __name__ == "__main__":
