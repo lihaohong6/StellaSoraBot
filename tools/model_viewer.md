@@ -69,8 +69,9 @@ outside the per-character bundles.
 
 ## Animations
 
-It also reads `char_<id>_animations.unity3d` and writes one `.glb` per clip
-under `anim/char_<id>/`, plus a `char_<id>.anims.json` manifest. Each
+It also reads `char_<id>_animations.unity3d` and `char_<id>_timeline.unity3d`,
+and writes one `.glb` per clip under `anim/char_<id>/`, plus a
+`char_<id>.anims.json` manifest. Each
 file holds only named nodes and the animation, so the viewer fetches clips on
 demand and retargets them onto the model by bone name. Alternate outfits have no
 clips of their own and fall back to the default outfit's bundle.
@@ -95,6 +96,12 @@ Note the first and last streamed frames are sentinels holding pre- and post-wrap
 state — and the first is stamped `-FLT_MAX`, not `-inf`, so it survives an
 `isfinite` check.
 
+Sampling before a curve's first key holds that key, as Unity's clamped wrap does,
+rather than running the cubic backwards from it. Every transform curve is keyed
+from the clip start, so this never came up until blend shapes did: a shape keyed
+only over the moment it fires starts seconds in, and extrapolating backwards to
+`t=0` put char_13403's `face01` at -4088%.
+
 Transform and blend shape bindings are taken. What that leaves out:
 
 - **Cloth and skirt bones** are in the clips but not in the model prefab — the
@@ -115,10 +122,39 @@ CRC32 of the shape name — which is exactly the hash the mesh already stores
 against the channel, so nothing has to be guessed. Weights are percentages there
 and unit fractions in glTF.
 
-Only a handful of clips animate a face — Ready, Victory, Timeline, Die — and the
-manifest flags them, which is what `· face` in the viewer's clip list marks.
-Everything else leaves the face neutral, including Idle, so a character only
-changes expression on those clips.
+They are also clamped to 0–100 on the way. Where a shape sits idle the bundle
+keys it only every ~0.8 s, and the cubic joining those sparse keys wanders far
+outside anything a weight can mean: 133_Ready holds `face01` at 100 for 1.4 s but
+swings to 578 in between, against `face02` at -483. Every blend shape channel in
+every model tops out at a `fullWeight` of 100, so the runtime has to be clamping
+too; clamp and the curve reads as authored, a hold and then a two-frame
+crossfade. Excursions inside a densely keyed stretch overshoot by 1–2% at most,
+so this costs nothing where the artist actually keyed something.
+
+Only a handful of clips animate a face — Ready, ReadyLoop, Victory, VictoryLoop,
+the ultra Timeline, and the occasional Die — and the manifest flags them, which
+is what `· face` in the viewer's clip list marks. Everything else leaves the face
+neutral, including Idle and the whole combat set, so a character only changes
+expression on those clips. That is what the bundles hold, not something the
+exporter drops: no attack or skill clip carries a blend shape binding.
+
+The Timeline clip is the one that emotes most, and for most characters it is not
+in the animations bundle at all — it ships in `char_<id>_timeline.unity3d`
+alongside its own cutscene rig. That bundle is read as a second clip source, with
+its own `m_TOS`: merging the two path tables would let one rig's hashes resolve
+against the other's bones. Its camera and prop clips animate nothing the model
+has, produce no channels, and drop out on their own.
+
+Roughly half of those cutscene rigs carry a reduced face — 4 shapes where the
+model has 13, say. Because a binding is matched on the CRC32 of the shape *name*
+rather than a channel index, the shapes it does have still land on the right
+morph target, and the ones it lacks find no match and are left out. This assumes
+`face03` means the same expression on both rigs, which is the same assumption the
+animations bundle already relies on.
+
+char_10801 and char_12001 have no blend shapes on the face mesh at all, so they
+stay neutral everywhere. Whatever the game does for their expressions, it is not
+morph targets.
 
 Each clip that has one carries a stand-in mesh — a degenerate triangle — with
 the right number of shapes: a weights channel may only target a node that has morph targets, and
@@ -127,9 +163,11 @@ mesh in the model, and the viewer retargets the track by that name — once per
 material the face is split across, since each is its own object with its own
 copy of the influences.
 
-Characters exported before this went in carry no morph targets; re-export them
-with `--overwrite` and their faces come to life. A viewer holding an old model
-drops the weights track rather than misbinding it, so the mix is harmless.
+Characters exported before this went in carry no morph targets, and their
+manifests flag no clip `face`; re-export them with `--overwrite` and their faces
+come to life. A viewer holding an old model drops the weights track rather than
+misbinding it, so the mix is harmless — which also means a stale export fails
+silently, looking exactly like a character that simply never emotes.
 
 The *Swap-in parts* checkbox is a different thing. It reveals the meshes the
 game keeps off until a script turns them on: char_10301's phone, cat and

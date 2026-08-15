@@ -548,6 +548,13 @@ class Curve:
         delta = times - self.times[index]
         # The final key's coefficients describe extrapolation past the clip; hold.
         delta[index == len(self.times) - 1] = 0.0
+        # Before the first key, hold it too, as Unity's clamped wrap does. A
+        # negative delta would run the cubic backwards instead, and a blend shape
+        # keyed only over the moment it fires — the streamed clip stores nothing
+        # for the seconds it sits at zero — comes out tens of times its full
+        # weight at t=0. Every transform curve is keyed from the start, so this
+        # only ever bit the face.
+        np.maximum(delta, 0.0, out=delta)
         c = self.coefficients[index]
         return ((c[:, 0] * delta + c[:, 1]) * delta + c[:, 2]) * delta + c[:, 3]
 
@@ -646,33 +653,48 @@ class AnimationExporter:
     def __init__(self, char_id: str) -> None:
         self.char_id = char_id
         self.rest, self.shapes = _skeleton_rest_pose(char_id)
-        self.env = self._load_environment()
-        self.tos = self._read_tos()
+        self.sources = self._load_environments()
 
-    def _load_environment(self) -> UnityPy.Environment:
+    def _load_environments(self) -> list[tuple[UnityPy.Environment, dict[int, str]]]:
+        """The bundles holding this character's clips, each with its own TOS.
+
+        The ultra cutscene lives in `_timeline` rather than `_animations`, and it
+        is the clip that emotes most, so both are read. They cannot share an
+        environment: the timeline bundle carries its own rig and avatars, and
+        merging the two path tables would let one rig's hashes resolve against
+        the other's bones.
+        """
         available = {f.name: f for f in get_unity3d_files()}
         # Alternate outfits ship a model but no clips of their own; the last digit
         # is the outfit, and they animate off the default one's bundle.
-        for char_id in (self.char_id, f"{self.char_id[:-1]}1"):
-            name = f"char_{char_id}_animations.unity3d"
-            if name in available:
-                return UnityPy.Environment(str(available[name]))
-        raise FileNotFoundError(f"no animation bundle for char_{self.char_id}")
+        sources = []
+        for part in ("animations", "timeline"):
+            for char_id in (self.char_id, f"{self.char_id[:-1]}1"):
+                name = f"char_{char_id}_{part}.unity3d"
+                if name in available:
+                    env = UnityPy.Environment(str(available[name]))
+                    sources.append((env, self._read_tos(env)))
+                    break
+        if not sources:
+            raise FileNotFoundError(f"no animation bundle for char_{self.char_id}")
+        return sources
 
-    def _read_tos(self) -> dict[int, str]:
+    @staticmethod
+    def _read_tos(env: UnityPy.Environment) -> dict[int, str]:
         """CRC path hash -> bone path, merged over every avatar in the bundle."""
         tos: dict[int, str] = {}
-        for obj in self.env.objects:
+        for obj in env.objects:
             if obj.type.name == "Avatar":
                 for path_hash, path in obj.read().m_TOS:
                     tos.setdefault(path_hash, path)
         return tos
 
-    def clips(self) -> list[AnimationClip]:
-        clips = [o.read() for o in self.env.objects if o.type.name == "AnimationClip"]
-        return sorted(clips, key=lambda c: c.m_Name)
+    def clips(self) -> list[tuple[AnimationClip, dict[int, str]]]:
+        clips = [(o.read(), tos) for env, tos in self.sources
+                 for o in env.objects if o.type.name == "AnimationClip"]
+        return sorted(clips, key=lambda pair: pair[0].m_Name)
 
-    def build(self, clip: AnimationClip) -> Optional[GltfBuilder]:
+    def build(self, clip: AnimationClip, tos: dict[int, str]) -> Optional[GltfBuilder]:
         curves = read_curves(clip)
         start = float(clip.m_MuscleClip.m_StartTime)
         duration = float(clip.m_MuscleClip.m_StopTime) - start
@@ -689,11 +711,11 @@ class AnimationExporter:
 
         for binding, first, width in clip_bindings(clip):
             if binding.typeID == CLASS_SKINNED_MESH_RENDERER:
-                self._collect_morph(binding, curves.get(first), morphs)
+                self._collect_morph(binding, curves.get(first), morphs, tos)
                 continue
             if binding.typeID != CLASS_TRANSFORM or binding.attribute not in ATTRIBUTE_WIDTH:
                 continue
-            path = self.tos.get(binding.path)
+            path = tos.get(binding.path)
             rest = self.rest.get(path) if path else None
             # Cloth and skirt bones are spawned by the runtime, not in the prefab.
             if rest is None:
@@ -733,6 +755,15 @@ class AnimationExporter:
             # fractions, and every shape in one output rather than a curve each.
             times, values = self._sample([animated[c] for c in columns],
                                          start, duration, rate, 0.5)
+            # Where a shape sits idle the bundle keys it only every ~0.8s, and the
+            # cubic joining those keys wanders far outside the range a weight can
+            # mean — 133_Ready holds face01 at 100 but swings to 578 in between,
+            # against face02 at -483. Every channel in every model tops out at a
+            # fullWeight of 100, so the runtime must clamp; do the same and the
+            # curve reads as authored, a hold and then a crossfade. Excursions
+            # inside a densely keyed stretch overshoot by 1-2% at most, so this
+            # costs nothing where the artist actually keyed something.
+            np.clip(values, 0.0, 100.0, out=values)
             weights = np.zeros((len(times), len(names)), np.float32)
             weights[:, columns] = values / 100.0
             times, weights = decimate(times, weights, TOLERANCE["weights"])
@@ -754,13 +785,17 @@ class AnimationExporter:
         return gltf
 
     def _collect_morph(self, binding: Any, curve: Optional[Curve],
-                       morphs: dict[str, dict[int, Curve]]) -> None:
+                       morphs: dict[str, dict[int, Curve]],
+                       tos: dict[int, str]) -> None:
         """File a SkinnedMeshRenderer binding under the shape it drives.
 
         A generic binding names its attribute by CRC32, which for a blend shape
-        is exactly the hash the mesh already stores against the channel.
+        is exactly the hash the mesh already stores against the channel. Matching
+        on the hash rather than the channel index is what lets a timeline clip
+        retarget: its rig often carries a reduced set of the same named shapes,
+        and a shape it has no counterpart for simply finds no match and is left out.
         """
-        path = self.tos.get(binding.path)
+        path = tos.get(binding.path)
         names = self.shapes.get(path) if path else None
         if names is None or curve is None:
             return
@@ -918,13 +953,19 @@ def export_animations(char_id: str, out_dir: Path) -> list[dict[str, Any]]:
     clip_dir = out_dir / "anim" / f"char_{char_id}"
     clip_dir.mkdir(parents=True, exist_ok=True)
     manifest = []
-    for clip in exporter.clips():
-        gltf = exporter.build(clip)
+    taken: set[str] = set()
+    for clip, tos in exporter.clips():
+        gltf = exporter.build(clip, tos)
         if gltf is None:
             continue
         # The name comes from the bundle and ends up in a URL, so keep it to
         # characters that need no escaping and cannot walk out of the directory.
-        path = clip_dir / (re.sub(r"[^A-Za-z0-9._-]", "_", clip.m_Name) + ".glb")
+        stem = re.sub(r"[^A-Za-z0-9._-]", "_", clip.m_Name)
+        # Two bundles now feed this, and both name a clip `Recorded`.
+        while stem in taken:
+            stem += "_"
+        taken.add(stem)
+        path = clip_dir / (stem + ".glb")
         gltf.save(path)
         manifest.append({
             "name": clip.m_Name,
