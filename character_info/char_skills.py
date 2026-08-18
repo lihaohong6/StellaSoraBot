@@ -23,7 +23,7 @@ class Skill:
     cd: float
     energy: float
     icon: str
-    params: list[SkillParam]
+    params: dict[int, SkillParam]
 
     def icon_path(self) -> Path:
         p = assets_root / "icon/skill"
@@ -40,18 +40,10 @@ class Skill:
         self.cd = d.get('SkillCD', 0) / 10000.0
         self.energy = d.get('UltraEnergy', 0) / 10000.0
         self.icon = d['Icon'].split("/")[-1]
-        placeholders = re.findall(r"\{(\d+)}", self.brief_desc + self.desc)
-        max_params = max(map(int, placeholders), default=0)
-        self.params = parse_params(d, max_params)
+        self.params = parse_params(d, self.brief_desc, self.desc)
 
-    def format_params(self) -> list[str] | None:
-        result = []
-        for level in range(10):
-            desc = format_desc(self.desc, self.params, level)
-            if desc is None:
-                continue
-            result.append(desc)
-        return result
+    def format_params(self) -> list[str]:
+        return [format_desc(self.desc, self.params, level) for level in range(13)]
 
     def to_template(self, upgrade_materials_brief: str, upgrade_materials: list[str]) -> Template:
         t = Template("{{TrekkerSkill\n}}")

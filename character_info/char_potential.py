@@ -29,7 +29,7 @@ class Potential:
     build: int
     branch_type: int
     max_level: int
-    params: list[SkillParam]
+    params: dict[int, SkillParam]
     icon: str
     shape: int
 
@@ -72,8 +72,8 @@ def parse_potentials() -> dict[int, Potential]:
         brief = skill_escape(v['BriefDesc'])
         attrs = data_to_dict(v, ["max_level", "branch_type", "build", "desc"])
         attrs['desc'] = skill_escape(attrs['desc'])
-        params = parse_params(v, max_params=100)
-        for p in params:
+        params = parse_params(v, brief, attrs['desc'])
+        for p in params.values():
             p.param_type = SkillParamType.NONE
         icon = item['Icon'].split("/")[-1].lower() + "_a.png"
         result[potential_id] = Potential(
@@ -133,7 +133,6 @@ def format_potential(potential: Potential) -> str:
     brief = format_desc(potential.brief, potential.params, level=-1, max_level=1)
     set_arg(t, "brief", brief)
     desc = format_desc(potential.desc, potential.params, level=-1, max_level=6 if potential.max_level > 1 else 1)
-    assert desc is not None
     set_arg(t, "desc", desc)
     set_arg(t, "icon", potential.icon)
     set_arg(t, "shape", potential.shape)

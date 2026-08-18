@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import cache
 
-from utils.data_utils import autoload, load_json
+from utils.data_utils import autoload
 
 
 @dataclass
@@ -26,13 +26,7 @@ def get_words() -> dict[int, Word]:
         else:
             icon = m.group(1).lower()
         desc = skill_escape(w['Desc'], escape_word=False)
-        num_params = 0
-        for i in range(1, 100):
-            if f"Param{i}" in w:
-                num_params += 1
-            else:
-                break
-        params = parse_params(w, num_params)
+        params = parse_params(w, desc)
         desc = format_desc(desc, params, level=1, max_level=1)
         result[w['Id']] = Word(
             w['Id'],
@@ -95,129 +89,126 @@ def skill_escape(bd, escape_word: bool = True) -> str:
 class SkillParamType(Enum):
     NONE = 0
     ASCENSION = 1
+    ACTOR = 2
     SKILL_LEVEL = 3
     BREAKTHROUGH = 4
+    NOTE = 5
+    DISC_SKILL = 6
+    BUILD_LEVEL = 7
+    SOLDIER_LEVEL = 8
 
 
 @dataclass
 class SkillParam:
     param_type: SkillParamType
-    params: list[int] | int | str
+    values: list[str]
 
 
 def get_effect_by_type(type1: int, type2: int) -> Effect:
     effects = [e for e in get_effects() if e.type1 == type1 and e.type2 == type2]
     if len(effects) == 0:
         effects = [e for e in get_effects() if e.type1 == type1]
-    assert len(effects) > 0
-    effect = effects[0]
-    return effect
+    if len(effects) == 0:
+        raise RuntimeError(f"No effect description for type {type1}/{type2}")
+    return effects[0]
 
 
-def process_param(param: str) -> tuple[SkillParamType, list[int] | int | str]:
-    hint: str = ""
-    dict_key_hint: str = ""
-    segments = param.split(',')
+@cache
+def get_enum_descs() -> dict[tuple[str, int], str]:
+    ui_text = autoload("UIText")
+    return {(v['EnumName'], v['Value']): ui_text[v['Key']]['Text']
+            for v in autoload("EnumDesc").values()}
 
-    def normalize_percentage(original_value: float | list[float]) -> str | list[str]:
-        if type(original_value) is list:
-            return [normalize_percentage(v2) for v2 in original_value]
-        try:
-            value = float(original_value)
-        except ValueError:
-            return str(original_value)
-        if hint == "EAT" and segments[-2] == "Enum":
-            enum_dict = {
-                "AttributeType1": "ParameterType1",
-                "AttributeType2": "ParameterType2",
-                "EffectTypeFirstSubtype": "EffectTypeSecondSubtype"
-            }
-            assert dict_key_hint in enum_dict
-            # Special case: this is an effect that needs to be looked up in a table
-            type2 = value_table[key][enum_dict[dict_key_hint]]
-            effect = get_effect_by_type(int(original_value), type2)
-            return effect.desc
-        suffix = "%"
-        if dict_key_hint in {"Time", "CommonData"} or "Fixed" in hint:
-            suffix = ""
-        if "Pct" in hint:
-            suffix = "%"
-        if "10K" in hint:
-            value /= 10000
-        if "HdPct" in hint:
-            value *= 100
-        return f"{value:.1f}{suffix}"
 
-    if len(segments) > 4:
-        hint = segments[-1]
-    else:
-        hint = "10K"
-    file_name = segments[0]
-    data = autoload(file_name)
-    if not data:
-        raise RuntimeError(f"No data found for {file_name}")
-    param_id = segments[2]
-    dict_key_hint = segments[3] if len(segments) > 3 else ""
-    row: dict = data.get(str(param_id), {})
+def format_number(number: float) -> str:
+    number = float(f"{number:.14g}")
+    if number % 1 < 0.01:
+        return str(int(number))
+    return f"{number:.14g}"
+
+
+def format_value(value: str | int | float, show_type: str, enum_type: str) -> str:
+    if show_type == "Text":
+        return str(value)
+    if show_type == "Enum":
+        key = (enum_type, int(value))
+        if key not in get_enum_descs():
+            raise RuntimeError(f"{enum_type} enum has no value {value}")
+        return get_enum_descs()[key]
+    number = float(value)
+    if show_type in {"10K", "10KPct", "10KHdPct"}:
+        number /= 10000
+    if show_type in {"HdPct", "10KHdPct"}:
+        number *= 100
+    suffix = "%" if show_type in {"Pct", "HdPct", "10KPct", "10KHdPct"} else ""
+    return format_number(abs(number)) + suffix
+
+
+def format_hit_damage(row: dict, level: int) -> str:
+    percent = row['SkillPercentAmend'][level - 1] / 10000
+    flat = row['SkillAbsAmend'][level - 1]
+    parts = []
+    if percent > 0:
+        parts.append(format_number(percent) + "%")
+    if flat > 0:
+        parts.append(format_number(flat))
+    return "+".join(parts)
+
+
+def parse_param(param_text: str) -> SkillParam:
+    segments = param_text.split(',')
+    table_name, parse_type, key = segments[0], segments[1], int(segments[2])
+    field = segments[3] if len(segments) > 3 else ""
+    show_type = segments[4] if len(segments) > 4 else ""
+    enum_type = segments[5] if len(segments) > 5 else ""
+    table = autoload(table_name)
+    if table is None:
+        raise RuntimeError(f"no config table named {table_name}")
+    row = table.get(str(key))
+    if row is None:
+        raise RuntimeError(f"{table_name} has no row {key}")
     param_type = SkillParamType(row.get('levelTypeData', 0))
-    if file_name == "Skill" and dict_key_hint == "Title":
-        return param_type, row["Title"]
-    if row is not None and "SkillPercentAmend" in row:
-        return param_type, normalize_percentage(row["SkillPercentAmend"])
-    if file_name in {"Shield", "Buff", "Effect", "OnceAdditionalAttribute", "ScriptParameter", "EffectValue", "BuffValue", "OnceAdditionalAttributeValue"}:
-        if "Value" in file_name:
-            value_table = data
-        else:
-            value_table = load_json(f"{file_name}Value")
-        cur_id = int(param_id)
-        if str(cur_id) not in value_table:
-            cur_id += 10
-        if str(cur_id) not in value_table:
-            raise RuntimeError(f"{file_name} not found for {param}")
+
+    if parse_type == "DamageNum":
         if param_type == SkillParamType.NONE:
-            key = str(cur_id)
-            return param_type, normalize_percentage(value_table[key][dict_key_hint])
-        result = []
-        for i in range(0, 10):
-            key = str(cur_id + i * 10)
-            # Only 1/2 value(s); terminate early
-            if key not in value_table:
-                if i in {1, 2}:
-                    return param_type, result[0]
-                return param_type, result
-            v = value_table[key][dict_key_hint]
-            v = normalize_percentage(v)
-            result.append(v)
-        return param_type, result
-    return param_type, normalize_percentage(row[dict_key_hint])
+            return SkillParam(param_type, [format_hit_damage(row, 1)])
+        levels = range(1, len(row['SkillPercentAmend']) + 1)
+        return SkillParam(param_type, [format_hit_damage(row, level) for level in levels])
+    if parse_type == "NoLevel":
+        if field not in row:
+            raise RuntimeError(f"{table_name} row {key} has no field {field}")
+        return SkillParam(param_type, [format_value(row[field], show_type, enum_type)])
+    if parse_type != "LevelUp":
+        raise RuntimeError(f"unsupported parse type {parse_type}")
+
+    value_table = autoload(f"{table_name}Value")
+    if value_table is None:
+        raise RuntimeError(f"no config table named {table_name}Value")
+    values = []
+    level = 0 if param_type == SkillParamType.NONE else 1
+    while (value_row := value_table.get(str(key + level * 10))) is not None:
+        if field not in value_row:
+            raise RuntimeError(f"{table_name}Value row {key} has no field {field}")
+        values.append(format_value(value_row[field], show_type, enum_type))
+        if param_type == SkillParamType.NONE:
+            break
+        level += 1
+    if not values:
+        raise RuntimeError(f"{table_name}Value has no values for {key}")
+    return SkillParam(param_type, values)
 
 
-def parse_param(param_string: str) -> SkillParam:
-    param_type, param = process_param(param_string)
-    if type(param) is not int:
-        if type(param) is not list:
-            param = [param]
-        values: list[str] = param
-        if all(".0" in value for value in values):
-            param = [value.replace(".0", "") for value in values]
-    return SkillParam(param_type, param)
-
-
-def parse_params(d: dict, max_params: int) -> list[SkillParam]:
-    params: list[SkillParam] = []
-    for i in range(1, max_params + 1):
-        param_key = f"Param{i}"
-        if param_key not in d:
-            params.append(SkillParam(SkillParamType.NONE, -1))
+def parse_params(d: dict, *descs: str) -> dict[int, SkillParam]:
+    params: dict[int, SkillParam] = {}
+    for param_num in sorted({int(n) for desc in descs for n in re.findall(r"\{(\d+)}", desc)}):
+        param_text = d.get(f"Param{param_num}")
+        if param_text is None:
+            print(f"ERROR: {d['Id']} references Param{param_num} but does not define it")
             continue
-        param_text = d[param_key]
         try:
-            param = parse_param(param_text)
+            params[param_num] = parse_param(param_text)
         except Exception as e:
-            print(d['Id'])
-            print(e)
-            param = SkillParam(SkillParamType.NONE, -1)
-        params.append(param)
+            print(f"ERROR: could not parse Param{param_num} ({param_text}) of {d['Id']}: {e}")
     return params
 
 
@@ -227,7 +218,7 @@ def skill_level_hint(param_type: SkillParamType, original: str) -> str:
     return original
 
 
-def format_desc(desc: str, params: list[SkillParam], level: int, max_level: int = 9) -> str | None:
+def format_desc(desc: str, params: dict[int, SkillParam], level: int, max_level: int = 9) -> str:
     """
     :param desc:
     :param params:
@@ -235,27 +226,19 @@ def format_desc(desc: str, params: list[SkillParam], level: int, max_level: int 
     :param max_level:
     :return:
     """
-    for param_num, skill_param in enumerate(params):
-        search_string = "{" + str(param_num + 1) + "}"
+    for param_num, skill_param in params.items():
+        search_string = "{" + str(param_num) + "}"
         if search_string not in desc:
             continue
-        param = skill_param.params
-        if param == -1:
-            print(f"ERROR: could not format param {param_num + 1} of {desc} at level {level}")
-            return None
-        if type(param) != list:
-            desc = desc.replace(search_string, str(param))
+        values = skill_param.values
+        if level != -1 and skill_param.param_type == SkillParamType.SKILL_LEVEL:
+            string = values[min(level, len(values) - 1)]
         else:
-            if level != -1 and skill_param.param_type == SkillParamType.SKILL_LEVEL:
-                desc = desc.replace(search_string, str(param[level]))
+            values = values[:max_level]
+            if all(values[0] == v for v in values):
+                string = values[0]
             else:
-                # Sometimes we get filler data with 0s.
-                params = param[:max_level]
-                # Sometimes we get dup values
-                if all(params[0] == p for p in params):
-                    string = params[0]
-                else:
-                    string = "/".join(params)
-                string = skill_level_hint(skill_param.param_type, string)
-                desc = desc.replace(search_string, string)
+                string = "/".join(values)
+            string = skill_level_hint(skill_param.param_type, string)
+        desc = desc.replace(search_string, string)
     return desc
