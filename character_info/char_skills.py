@@ -92,22 +92,22 @@ def get_skills() -> dict[str, CharSkills]:
     id_to_char = get_id_to_char()
     result = {}
     data = autoload("Skill")
+    characters = autoload("Character")
 
     for char_id, char in id_to_char.items():
-        def get(key: int) -> dict:
-            k1 = str(char_id) + str(key)
-            if k1 in data:
-                return data[k1]
-            k2 = str(char_id) + str(key + 1)
-            if k2 in data:
-                return data[k2]
-            raise RuntimeError()
+        c = characters[str(char_id)]
+
+        def get(key: str) -> dict:
+            skill = data.get(str(c[key]))
+            if skill is None:
+                raise RuntimeError(f"character {char_id} references nonexistent skill {c[key]}")
+            return skill
 
         result[char.name] = CharSkills(
-            attack=Skill(get(10000)),
-            main=Skill(get(31000)),
-            support=Skill(get(32000)),
-            ultimate=Skill(get(40000)),
+            attack=Skill(get("NormalAtkId")),
+            main=Skill(get("SkillId")),
+            support=Skill(get("AssistSkillId")),
+            ultimate=Skill(get("UltimateId")),
         )
     return result
 
