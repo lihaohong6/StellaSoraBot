@@ -1,11 +1,12 @@
 import json
 import re
-import shutil
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
+import numpy as np
 from PIL import Image
+from scipy import ndimage
 from wikitextparser import Template, parse
 
 from character_info.characters import id_to_char, Character, get_character_pages, get_characters
@@ -52,6 +53,26 @@ def compute_offsets(base: SpriteData, top: SpriteData, bh: float, th: float) -> 
     return int(round(off_x)), int(round(off_y))
 
 
+def content_bbox(image: Image.Image) -> tuple[int, int, int, int] | None:
+    """Bounding box of the visible art, ignoring block compression dust.
+
+    The source atlases are BC7-compressed, so areas that should be empty decode to
+    specks of alpha 1-8 scattered over the whole frame. Image.getbbox() counts those
+    as content and hands back nearly the full frame, so drop the faint pixels and any
+    remaining speck too small to be art before measuring.
+    """
+    mask = np.array(image.getchannel("A")) > 8
+    labels, count = ndimage.label(mask)
+    if count == 0:
+        return None
+    sizes = ndimage.sum(mask, labels, range(1, count + 1))
+    kept = np.concatenate(([False], sizes >= 16))[labels]
+    ys, xs = np.nonzero(kept)
+    if len(xs) == 0:
+        return None
+    return int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
+
+
 def compose(base: Sprite, top: Sprite, out: Path) -> None:
     base_image = Image.open(base.source).convert("RGBA")
     top_image = Image.open(top.source).convert("RGBA")
@@ -73,7 +94,7 @@ def compose(base: Sprite, top: Sprite, out: Path) -> None:
     canvas2.paste(top_image, (anchor_x + off_x, anchor_y + off_y))
 
     combined = Image.alpha_composite(canvas1, canvas2)
-    bbox = combined.getbbox()
+    bbox = content_bbox(combined)
     if bbox:
         combined = combined.crop(bbox)
     combined.save(out)
@@ -88,7 +109,11 @@ def process_assets(sprites: list[Sprite], char: Character, variant_name: str) ->
         out = base.get_sprite_path(char.name, variant_name)
         out.parent.mkdir(exist_ok=True, parents=True)
         if not out.exists():
-            shutil.copy(base.source, out)
+            image = Image.open(base.source).convert("RGBA")
+            bbox = content_bbox(image)
+            if bbox:
+                image = image.crop(bbox)
+            image.save(out)
             print(f"Saved: {out}")
         base.combined = out
         return
