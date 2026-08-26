@@ -28,7 +28,7 @@ from UnityPy.helpers.MeshHelper import MeshHandler
 
 from unpack.unpack_paths import unity_asset_dir_1, unity_asset_dir_2
 from unpack.unpack_utils import get_unity3d_files
-from utils.data_utils import assets_root
+from utils.data_utils import assets_root, autoload
 
 model_root = assets_root / "actor3d"
 CAB_INDEX_PATH = assets_root / "cab_index.json"
@@ -62,6 +62,35 @@ COMPONENT_SHORT = 5122
 TARGET_ARRAY, TARGET_ELEMENT = 34962, 34963
 
 MODEL_PARTS = ("models", "materials", "textures")
+
+
+def character_base_name(char_id: str) -> str:
+    """The character's own name, regardless of skin.
+
+    Every one of a character's skins is exported into one subdirectory, named
+    after this rather than any particular skin, so that an alt outfit sits
+    next to the default it is a variant of.
+    """
+    skin = autoload("CharacterSkin")[char_id]
+    return autoload("Character")[str(skin["CharId"])]["Name"]
+
+
+def character_display_name(char_id: str) -> str:
+    """The name a character's model should be shown and saved under.
+
+    `char_id` is `CharacterSkin`'s own id: a 3-digit character id plus a
+    2-digit skin suffix. The default skin (`Type == 1`) takes the character's
+    bare name; any other skin appends its own title, in the same
+    `Character: Skin` style `CharacterSkin.Name` already uses for the default.
+    """
+    skin = autoload("CharacterSkin")[char_id]
+    name = character_base_name(char_id)
+    return name if skin["Type"] == 1 else f"{name}: {skin['Name']}"
+
+
+def slug(name: str) -> str:
+    """A display or clip name, made safe for a filename and URL path segment."""
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("_")
 
 
 def _bundle_cabs(path: str) -> tuple[str, list[str]]:
@@ -493,9 +522,23 @@ def available_character_ids() -> list[str]:
 
 
 def write_index(out_dir: Path) -> None:
-    entries = [{"id": p.stem[len("char_"):], "file": p.name,
-                "label": f"char_{p.stem[len('char_'):]}"}
-               for p in sorted(out_dir.glob("char_*.glb"))]
+    """Every character with a model on disk, however it got there.
+
+    Scanning `available_character_ids()` against the files already exported —
+    rather than the ids this particular run touched — keeps a `--char-id`
+    export from dropping every other character out of the index. `out_dir`
+    itself stays a bare index plus one subdirectory per character; this is
+    what points into them.
+    """
+    entries = []
+    for char_id in available_character_ids():
+        base_slug = slug(character_base_name(char_id))
+        name = character_display_name(char_id)
+        path = out_dir / base_slug / f"{slug(name)}.glb"
+        if path.exists():
+            entries.append({"id": char_id, "file": f"{base_slug}/{path.name}",
+                            "label": name})
+    entries.sort(key=lambda e: e["label"])
     (out_dir / "index.json").write_text(json.dumps(entries, indent=1))
 
 
@@ -649,9 +692,24 @@ def decimate(times: np.ndarray, values: np.ndarray,
     return times[index], values[index]
 
 
+def _clip_display_name(clip_name: str, id_tokens: set[str]) -> str:
+    """A clip's own name, with any character/skin id token dropped.
+
+    Clips are exported one character at a time, so a token in the name that
+    just repeats that id says nothing a filename already grouped under the
+    character doesn't. Most clips are shared per-character and carry the
+    3-digit character id (`133_Ready`, `Episode0Act_103_Run4-2`), but an alt
+    outfit with its own timeline cutscene names those clips after its own
+    5-digit skin id instead (`13303_Ready`), so both forms are stripped.
+    """
+    parts = [p for p in clip_name.split("_") if p not in id_tokens]
+    return "_".join(parts) if parts else clip_name
+
+
 class AnimationExporter:
     def __init__(self, char_id: str) -> None:
         self.char_id = char_id
+        self.id_tokens = {char_id, char_id[:-2]}
         self.rest, self.shapes = _skeleton_rest_pose(char_id)
         self.sources = self._load_environments()
 
@@ -703,7 +761,8 @@ class AnimationExporter:
         rate = float(clip.m_SampleRate) or 30.0
 
         gltf = GltfBuilder()
-        gltf.root["animations"] = [{"name": clip.m_Name, "channels": [], "samplers": []}]
+        name = _clip_display_name(clip.m_Name, self.id_tokens)
+        gltf.root["animations"] = [{"name": name, "channels": [], "samplers": []}]
         animation = gltf.root["animations"][0]
         nodes: dict[str, int] = {}
         inputs: dict[bytes, int] = {}
@@ -948,9 +1007,16 @@ def _skeleton_rest_pose(
     return rest, shapes
 
 
-def export_animations(char_id: str, out_dir: Path) -> list[dict[str, Any]]:
+def export_animations(char_id: str, char_dir: Path, stem: str,
+                      base_slug: str) -> list[dict[str, Any]]:
+    """Writes `char_dir/<stem>_anims/*.glb` and `char_dir/<stem>.anims.json`.
+
+    A clip's `file` in the manifest is fetched relative to the whole output
+    root (`write_index`'s `out_dir`), not to `char_dir`, so it carries
+    `base_slug` even though `char_dir` already is `<out_dir>/<base_slug>`.
+    """
     exporter = AnimationExporter(char_id)
-    clip_dir = out_dir / "anim" / f"char_{char_id}"
+    clip_dir = char_dir / f"{stem}_anims"
     clip_dir.mkdir(parents=True, exist_ok=True)
     manifest = []
     taken: set[str] = set()
@@ -958,18 +1024,19 @@ def export_animations(char_id: str, out_dir: Path) -> list[dict[str, Any]]:
         gltf = exporter.build(clip, tos)
         if gltf is None:
             continue
+        name = gltf.root["animations"][0]["name"]
         # The name comes from the bundle and ends up in a URL, so keep it to
         # characters that need no escaping and cannot walk out of the directory.
-        stem = re.sub(r"[^A-Za-z0-9._-]", "_", clip.m_Name)
+        clip_stem = slug(name)
         # Two bundles now feed this, and both name a clip `Recorded`.
-        while stem in taken:
-            stem += "_"
-        taken.add(stem)
-        path = clip_dir / (stem + ".glb")
+        while clip_stem in taken:
+            clip_stem += "_"
+        taken.add(clip_stem)
+        path = clip_dir / (clip_stem + ".glb")
         gltf.save(path)
         manifest.append({
-            "name": clip.m_Name,
-            "file": f"anim/char_{char_id}/{path.name}",
+            "name": name,
+            "file": f"{base_slug}/{stem}_anims/{path.name}",
             "face": any(channel["target"]["path"] == "weights"
                         for channel in gltf.root["animations"][0]["channels"]),
             "duration": round(float(clip.m_MuscleClip.m_StopTime
@@ -977,7 +1044,7 @@ def export_animations(char_id: str, out_dir: Path) -> list[dict[str, Any]]:
             "loop": bool(clip.m_MuscleClip.m_LoopTime),
             "bytes": path.stat().st_size,
         })
-    (out_dir / f"char_{char_id}.anims.json").write_text(
+    (char_dir / f"{stem}.anims.json").write_text(
         json.dumps({"id": char_id, "clips": manifest}, indent=1))
     return manifest
 
@@ -985,24 +1052,28 @@ def export_animations(char_id: str, out_dir: Path) -> list[dict[str, Any]]:
 def _export_character(char_id: str, output_root: Path, animations: bool,
                       overwrite: bool) -> list[str]:
     """One character's model and clips, in a worker process. Returns its output."""
-    model_path = output_root / f"char_{char_id}.glb"
+    base_slug = slug(character_base_name(char_id))
+    stem = slug(character_display_name(char_id))
+    char_dir = output_root / base_slug
+    model_path = char_dir / f"{stem}.glb"
     lines: list[str] = []
     if overwrite or not model_path.exists():
         try:
             CharacterExporter(char_id).export(model_path)
-            lines.append(f"{model_path.name}  {model_path.stat().st_size / 1e6:.2f} MB")
+            lines.append(f"{base_slug}/{model_path.name}  "
+                         f"{model_path.stat().st_size / 1e6:.2f} MB")
         except Exception as exc:
-            return lines + [f"char_{char_id}: {type(exc).__name__}: {exc}"]
+            return lines + [f"{stem}: {type(exc).__name__}: {exc}"]
     if not animations:
         return lines
-    if not overwrite and (output_root / f"char_{char_id}.anims.json").exists():
+    if not overwrite and (char_dir / f"{stem}.anims.json").exists():
         return lines
     try:
-        manifest = export_animations(char_id, output_root)
+        manifest = export_animations(char_id, char_dir, stem, base_slug)
     except Exception as exc:
-        return lines + [f"char_{char_id} animations: {type(exc).__name__}: {exc}"]
+        return lines + [f"{stem} animations: {type(exc).__name__}: {exc}"]
     total = sum(clip["bytes"] for clip in manifest)
-    return lines + [f"char_{char_id}: {len(manifest)} clips, {total / 1e6:.2f} MB"]
+    return lines + [f"{stem}: {len(manifest)} clips, {total / 1e6:.2f} MB"]
 
 
 def export_3d_models(char_ids: set[str] | None = None,

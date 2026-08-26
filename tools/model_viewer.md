@@ -45,7 +45,7 @@ normally would.
 ## How it works
 
 `unpack/unpack_model.py` reads the `char_<id>{,_models,_materials,_textures}` bundles and
-writes one `.glb` per character:
+writes one `.glb` per character, holding:
 
 - meshes with normals, UVs, vertex colours, skin weights and bind poses
 - the `Root/Bip001` skeleton as a glTF skin
@@ -67,13 +67,30 @@ Cross-bundle references are resolved through `cab_index.json`. Without it the
 face lightmap and the shared matcap silently fail to load, because they live
 outside the per-character bundles.
 
+Every character gets its own subdirectory, named after the character rather
+than its numeric id — `Amber/`, not `char_10301/` — and everything the
+exporter writes for it lands there rather than loose in the output root, which
+stays a bare `index.json` plus one subdirectory per character. The `.glb`
+inside takes that same name (`Amber/Amber.glb`); an alternate skin appends its
+own title, in the `Character: Skin` style `CharacterSkin.Name` already uses
+for the default skin (`Amber: Ease Into an Unhurried Summer`), slugged for the
+filesystem and the URL the viewer fetches it from
+(`Amber/Amber_Ease_Into_an_Unhurried_Summer.glb`) — still inside the
+character's own subdirectory, alongside the default skin. `index.json` keeps
+both forms: the slugged path as `file`, the pretty form as `label`.
+
 ## Animations
 
 It also reads `char_<id>_animations.unity3d` and `char_<id>_timeline.unity3d`,
-and writes one `.glb` per clip under `anim/char_<id>/`, plus a
-`char_<id>.anims.json` manifest. Each
-file holds only named nodes and the animation, so the viewer fetches clips on
-demand and retargets them onto the model by bone name. Alternate outfits have no
+and writes one `.glb` per clip into a flat `<name>_anims/` directory next to
+the model, plus a `<name>.anims.json` manifest — `Amber/Amber_anims/Ready.glb`
+and `Amber/Amber.anims.json` — where `<name>` is the same slugged
+character/skin name as the model. A clip's own name usually repeats the
+character's id (`133_Ready`), or — for an alt outfit's own timeline cutscene —
+the 5-digit skin id instead (`13303_Ready`); since clips are already grouped
+one character at a time, that token is redundant and the exporter drops it, so
+the clip above is named and filed simply `Ready`. The viewer loads each clip on
+demand and retargets it onto the model by bone name. Alternate outfits have no
 clips of their own and fall back to the default outfit's bundle.
 
 The clips are generic (non-humanoid) Mecanim, so there is no muscle rig to
@@ -216,6 +233,18 @@ the face stops there while the slider goes on thickening the rest. Everything
 finer than the jaw — eyes, brows, lips — is texture linework, as in game.
 Eyebrows (`_CharSurface == 1`) and the emote quads are decals lying flat on the
 face and get no hull at all: on them it is pure artefact.
+
+The hull is suppressed per vertex by painting `COLOR_0.a` to 0 — TCP2's usual
+way of keeping it out of a fold. The body mesh does this on 48 of its 11,502
+vertices; the face mesh does it on none of its 2,009, mouth interior included.
+That interior sits collapsed behind the lips at rest, so the gap goes unnoticed
+until a clip opens the jaw wide — 130_Victory's `face09` blend shape does —
+at which point the now-unfolded, concave interior gets hauled through the same
+extrude-along-normal-by-view-distance math as the rest of the face, and lands
+back inside the mouth as a flat patch of `_OutlineColor`. Confirmed by toggling
+Outline off: the patch is exactly `_OutlineColor`, not a texture region. Whether
+the game hits this too is unknown — this reproduces the source vertex colours
+faithfully, so if it's wrong it is wrong upstream, not in the export.
 
 ## Not implemented
 
