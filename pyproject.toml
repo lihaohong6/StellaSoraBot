@@ -14,7 +14,7 @@ dependencies = [
     "requests>=2.32.5",
     "scipy>=1.17.1",
     "slpp>=1.2.3",
-    "unitypy[ttgen]==1.23.0",
+    "unitypy[ttgen]==1.25.3",
     "wikitextparser>=0.56.4",
     "xxhash>=3.6.0",
 ]
