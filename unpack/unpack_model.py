@@ -706,6 +706,155 @@ def _clip_display_name(clip_name: str, id_tokens: set[str]) -> str:
     return "_".join(parts) if parts else clip_name
 
 
+def _norm_key(name: str) -> str:
+    """A name reduced to what clip/rig matching compares: letters and digits."""
+    return re.sub(r"[^a-z0-9]+", "", name.lower())
+
+
+def _mesh_identity(pointer) -> Optional[tuple[str, int]]:
+    """(assets file, path id): the mesh a renderer points at, bundle-agnostic."""
+    if not (pointer and pointer.m_PathID):
+        return None
+    try:
+        reader = pointer.read().object_reader
+    except Exception:
+        return None
+    return reader.assets_file.name, reader.path_id
+
+
+RIG_FURNITURE = {"fx", "base", "timeline"}
+
+
+def _rig_clip_keys(rig_name: str, id_tokens: set[str]) -> list[str]:
+    """The normalized clip names a context rig could be naming.
+
+    `10301_Ready`, `fx_14401_base_Attack_3_Hide` and `fx_14401_timeline_Ultra`
+    all name clips once the id and the `fx`/`base`/`timeline` furniture is
+    dropped; a `timeline` rig also answers to `<name>_TL`, the take of the same
+    animation played without its cutscene. Tokens only ever come off the front,
+    and only while something would remain.
+    """
+    tokens = [t for t in re.split(r"[\s_]+", rig_name) if t]
+    furniture = id_tokens | RIG_FURNITURE
+    timeline = False
+    while len(tokens) > 1 and tokens[0].lower() in furniture:
+        timeline = timeline or tokens[0].lower() == "timeline"
+        tokens.pop(0)
+    key = _norm_key("".join(tokens))
+    if not key:
+        return []
+    return [key, key + "tl"] if timeline else [key]
+
+
+def _rig_mesh_states(transform: Transform,
+                     parts: dict[tuple[str, int], Any]) -> dict[tuple[str, int], bool]:
+    """The model's meshes under one rig, each mapped to its effective state.
+
+    Active in Unity means the whole ancestry is active, not just the object
+    itself; a mesh several times over — an Ultra rig carries three copies of
+    the model — counts as active if any instance is.
+    """
+    states: dict[tuple[str, int], bool] = {}
+    stack: list[tuple[Transform, bool]] = [(transform, True)]
+    while stack:
+        node, parent_active = stack.pop()
+        try:
+            game_object = node.m_GameObject.read()
+            active = parent_active and bool(game_object.m_IsActive)
+            for component in game_object.m_Component:
+                if component.component.type.name != "SkinnedMeshRenderer":
+                    continue
+                key = _mesh_identity(component.component.read().m_Mesh)
+                if key in parts:
+                    states[key] = states.get(key, False) or active
+            for child in node.m_Children:
+                stack.append((child.read(), active))
+        except Exception:
+            continue
+    return states
+
+
+def _context_rig_states(char_id: str,
+                        parts: dict[tuple[str, int], Any]
+                        ) -> dict[str, dict[tuple[str, int], bool]]:
+    """{rig name: {mesh: active}} for every whole-model copy in the rig bundles.
+
+    A copy is recognized by mesh identity — its renderers point at the same
+    mesh objects the model prefab uses — and only whole copies count, meaning
+    at least half the model's meshes; an FX prefab that borrows a single face
+    mesh is previewing an effect, not stating part visibility. The same copy
+    ships in both bundles for some characters; the first read wins.
+    """
+    available = {f.name: f for f in get_unity3d_files()}
+    threshold = max(2, len(parts) // 2)
+    rigs: dict[str, dict[tuple[str, int], bool]] = {}
+    for suffix in ("timeline", "fx"):
+        bundle = available.get(f"char_{char_id}_{suffix}.unity3d")
+        if bundle is None:
+            continue
+        path = str(bundle)
+        env = UnityPy.Environment(path)
+        load_externals(env, {path})
+        transforms = [o.read() for o in env.objects if o.type.name == "Transform"]
+        for transform in (t for t in transforms
+                          if not (t.m_Father and t.m_Father.m_PathID)):
+            rig = _rig_mesh_states(transform, parts)
+            if len(rig) >= threshold:
+                rigs.setdefault(transform.m_GameObject.read().m_Name, rig)
+    return rigs
+
+
+def rig_show_rules(char_id: str) -> dict[str, list[str]]:
+    """Which optional parts to `show` per clip, read off the game's context rigs.
+
+    The timeline and fx bundles carry whole copies of the model prefab, one per
+    context the game plays clips in — cutscene actor, Ready, an Ultra take —
+    with each copy's swap-in parts already active or inactive for that context.
+    The copy named after a clip is the rig that clip plays on, so the optional
+    parts it leaves on are what the clip should show; where no copy names a
+    clip, the clip gets no rule and the viewer's `optional` baseline holds.
+
+    Returns normalized clip name -> part names, for `show` in .anims.json. A
+    character the rig bundles say nothing usable about simply maps to {}.
+    """
+    try:
+        env = load_character_env(char_id, parts=("models",))
+        root = find_prefab_root(env, char_id)
+        shown = renderers_shown_by_default(root)
+        parts: dict[tuple[str, int], tuple[str, bool]] = {}
+
+        def collect(transform: Transform) -> None:
+            game_object = transform.m_GameObject.read()
+            for component in game_object.m_Component:
+                if component.component.type.name != "SkinnedMeshRenderer":
+                    continue
+                key = _mesh_identity(component.component.read().m_Mesh)
+                if key:
+                    parts[key] = (game_object.m_Name,
+                                  component.component.m_PathID not in shown)
+            for child in transform.m_Children:
+                collect(child.read())
+
+        collect(root)
+        if not parts:
+            return {}
+        id_tokens = {char_id, char_id[:-2]}
+        rules: dict[str, list[str]] = {}
+        for rig_name, rig in _context_rig_states(char_id, parts).items():
+            show: set[str] = set()
+            for key, active in rig.items():
+                name, optional = parts[key]
+                if active and optional and not name.endswith("_lod"):
+                    show.add(name)
+            if not show:
+                continue
+            for clip_key in _rig_clip_keys(rig_name, id_tokens):
+                rules.setdefault(clip_key, sorted(show))
+        return rules
+    except Exception:
+        return {}
+
+
 class AnimationExporter:
     def __init__(self, char_id: str) -> None:
         self.char_id = char_id
@@ -1007,6 +1156,222 @@ def _skeleton_rest_pose(
     return rest, shapes
 
 
+def _read_glb(path: Path) -> tuple[dict[str, Any], bytes]:
+    """The JSON and BIN chunks of a .glb, as `GltfBuilder.save` lays them out."""
+    data = path.read_bytes()
+    root: dict[str, Any] = {}
+    binary = b""
+    offset = 12
+    while offset < len(data):
+        length, kind = struct.unpack_from("<II", data, offset)
+        chunk = data[offset + 8:offset + 8 + length]
+        if kind == 0x4E4F534A:
+            root = json.loads(chunk)
+        else:
+            binary = chunk
+        offset += 8 + length
+    return root, binary
+
+
+def _read_accessor(root: dict[str, Any], binary: bytes, index: int) -> np.ndarray:
+    accessor = root["accessors"][index]
+    view = root["bufferViews"][accessor["bufferView"]]
+    dtype = np.dtype({COMPONENT_FLOAT: "<f4", COMPONENT_USHORT: "<u2",
+                      COMPONENT_UINT: "<u4", COMPONENT_UBYTE: "u1",
+                      COMPONENT_SHORT: "<i2"}[accessor["componentType"]])
+    columns = {"SCALAR": 1, "VEC2": 2, "VEC3": 3,
+               "VEC4": 4, "MAT4": 16}[accessor["type"]]
+    values = np.frombuffer(binary, dtype, accessor["count"] * columns,
+                           view.get("byteOffset", 0) + accessor.get("byteOffset", 0))
+    values = values.reshape(accessor["count"], columns).astype(np.float32)
+    if accessor.get("normalized"):
+        values = np.clip(values / np.iinfo(dtype).max, -1.0, 1.0)
+    return values
+
+
+def _compose(translation: np.ndarray, rotation: np.ndarray,
+             scale: np.ndarray) -> np.ndarray:
+    x, y, z, w = rotation
+    matrix = np.eye(4, dtype=np.float32)
+    matrix[:3, :3] = np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+    ], np.float32) * scale[None, :]
+    matrix[:3, 3] = translation
+    return matrix
+
+
+def _interpolate(track: Optional[tuple[np.ndarray, np.ndarray]], time: float,
+                 rest: np.ndarray, quaternion: bool) -> np.ndarray:
+    """One channel at one time; the clip's own LINEAR, ends held."""
+    if track is None:
+        return rest
+    times, values = track
+    if time <= times[0]:
+        return values[0]
+    if time >= times[-1]:
+        return values[-1]
+    key = int(np.searchsorted(times, time)) - 1
+    ratio = (time - times[key]) / (times[key + 1] - times[key])
+    before, after = values[key], values[key + 1]
+    if quaternion:
+        # Nearest arc, then renormalise: nlerp misplaces a fast turn's midpoint
+        # by a degree or two, which no bounding box notices.
+        if float(before @ after) < 0:
+            after = -after
+        blended = before + ratio * (after - before)
+        return blended / np.linalg.norm(blended)
+    return before + ratio * (after - before)
+
+
+class PosedModel:
+    """A model .glb, re-posed by a clip, to see where each of its meshes lands.
+
+    The viewer's own skinning is the ground truth for what a reader sees, so
+    this repeats it on the CPU: joint world matrices from the clip's tracks,
+    times the inverse bind matrices, weighted per vertex. A few hundred
+    vertices per mesh place a bounding box closely enough to tell a prop held
+    in frame from one parked under the floor.
+    """
+
+    def __init__(self, path: Path, sample: int = 200) -> None:
+        self.root, binary = _read_glb(path)
+        nodes = self.root["nodes"]
+        self.parents = [-1] * len(nodes)
+        for index, node in enumerate(nodes):
+            for child in node.get("children", ()):
+                self.parents[child] = index
+        self.names = [node.get("name", "") for node in nodes]
+        self.rest = [(np.asarray(node.get("translation", (0, 0, 0)), np.float32),
+                      np.asarray(node.get("rotation", (0, 0, 0, 1)), np.float32),
+                      np.asarray(node.get("scale", (1, 1, 1)), np.float32))
+                     for node in nodes]
+        self.parts: list[dict[str, Any]] = []
+        for index, node in enumerate(nodes):
+            if "mesh" not in node:
+                continue
+            mesh = self.root["meshes"][node["mesh"]]
+            attributes = mesh["primitives"][0]["attributes"]
+            points = _read_accessor(self.root, binary, attributes["POSITION"])
+            count = len(points)
+            step = max(1, count // sample)
+            points = points[::step]
+            part = {
+                "name": self.names[index],
+                "node": index,
+                "vertices": count,
+                "optional": bool(mesh.get("extras", {}).get("optional")),
+                "points": np.concatenate(
+                    [points, np.ones((len(points), 1), np.float32)], axis=1),
+                "joints": None,
+            }
+            if "skin" in node and "JOINTS_0" in attributes:
+                skin = self.root["skins"][node["skin"]]
+                part["joints"] = _read_accessor(
+                    self.root, binary, attributes["JOINTS_0"])[::step].astype(np.intp)
+                part["weights"] = _read_accessor(
+                    self.root, binary, attributes["WEIGHTS_0"])[::step]
+                part["bones"] = skin["joints"]
+                part["bind"] = _read_accessor(
+                    self.root, binary,
+                    skin["inverseBindMatrices"]).reshape(-1, 4, 4).transpose(0, 2, 1)
+            self.parts.append(part)
+
+    def tracks(self, clip_path: Path) -> dict[str, dict[str, Any]]:
+        """The clip's channels, keyed by the node name they retarget onto."""
+        root, binary = _read_glb(clip_path)
+        animation = root["animations"][0]
+        found: dict[str, dict[str, Any]] = {}
+        for channel in animation["channels"]:
+            name = root["nodes"][channel["target"]["node"]].get("name")
+            sampler = animation["samplers"][channel["sampler"]]
+            found.setdefault(name, {})[channel["target"]["path"]] = (
+                _read_accessor(root, binary, sampler["input"])[:, 0],
+                _read_accessor(root, binary, sampler["output"]))
+        return found
+
+    def _world(self, tracks: dict[str, dict[str, Any]], time: float) -> np.ndarray:
+        world = np.empty((len(self.rest), 4, 4), np.float32)
+        for index, (translation, rotation, scale) in enumerate(self.rest):
+            track = tracks.get(self.names[index], {})
+            local = _compose(
+                _interpolate(track.get("translation"), time, translation, False),
+                _interpolate(track.get("rotation"), time, rotation, True),
+                _interpolate(track.get("scale"), time, scale, False))
+            parent = self.parents[index]
+            world[index] = local if parent < 0 else world[parent] @ local
+        return world
+
+    def boxes(self, tracks: dict[str, dict[str, Any]],
+              times: np.ndarray) -> dict[str, np.ndarray]:
+        """Part name -> its skinned (min, max) at each of `times`, stacked."""
+        found: dict[str, list[np.ndarray]] = {}
+        for time in times:
+            world = self._world(tracks, float(time))
+            for part in self.parts:
+                if part["joints"] is None:
+                    points = (world[part["node"]] @ part["points"].T).T[:, :3]
+                else:
+                    skinning = world[part["bones"]] @ part["bind"]
+                    points = np.zeros((len(part["points"]), 3), np.float32)
+                    for column in range(part["joints"].shape[1]):
+                        moved = np.einsum("nij,nj->ni",
+                                          skinning[part["joints"][:, column]],
+                                          part["points"])
+                        points += moved[:, :3] * part["weights"][:, column, None]
+                found.setdefault(part["name"], []).append(
+                    np.stack([points.min(axis=0), points.max(axis=0)]))
+        return {name: np.stack(boxes) for name, boxes in found.items()}
+
+    def parked(self, clip_path: Path, duration: float,
+               shown: list[str]) -> list[str]:
+        """The parts this clip switches off, by node name.
+
+        The context rigs state the pose a clip starts from, not what it goes
+        on to do, so they keep naming a prop the clip has since put away. The
+        game puts one away in two ways, and neither deactivates the node: it
+        scales the rig the prop hangs from to nothing, or it drives that rig
+        out of the scene — Ann's Ready drops her dog and her weapon seven
+        metres under the floor. So a mesh with no size left is off, and so is
+        one whose bounds never come near the body's: a body height away in any
+        direction, or half that when it hangs entirely below the body, which
+        is where a stowed prop nearly always goes. Held props clear the body
+        by well under half a body height even at arm's length, and stay beside
+        it rather than under it.
+
+        Only what would otherwise be drawn is worth naming: an optional part
+        no rig shows is already hidden by the viewer's baseline.
+        """
+        if not self.parts:
+            return []
+        tracks = self.tracks(clip_path)
+        boxes = self.boxes(tracks, np.linspace(0.0, duration, 5))
+        # The body is the mesh with the most vertices in every model here; ask
+        # for it that way rather than by a name only some of them use.
+        body = boxes[max(self.parts, key=lambda part: part["vertices"])["name"]]
+        low, high = body[:, 0].min(axis=0), body[:, 1].max(axis=0)
+        height = float(high[1] - low[1])
+        parked = []
+        for part in self.parts:
+            if part["optional"] and part["name"] not in shown:
+                continue
+            box = boxes[part["name"]]
+            # A prop scaled away collapses to a point, so every sample of it
+            # measures nothing; one that only appears later in the clip does
+            # not. The scale is never quite zero -- Minova's Walk leaves her
+            # second weapon a millimetre across -- but nothing anyone is meant
+            # to see is under a centimetre either, so the two are far apart.
+            if float((box[:, 1] - box[:, 0]).max()) < 1e-2 * height:
+                parked.append(part["name"])
+                continue
+            bottom, top = box[:, 0].min(axis=0), box[:, 1].max(axis=0)
+            gap = float(np.maximum(low - top, bottom - high).max())
+            if gap > height or (gap > height / 2 and top[1] < low[1]):
+                parked.append(part["name"])
+        return sorted(parked)
+
+
 def export_animations(char_id: str, char_dir: Path, stem: str,
                       base_slug: str) -> list[dict[str, Any]]:
     """Writes `char_dir/<stem>_anims/*.glb` and `char_dir/<stem>.anims.json`.
@@ -1014,8 +1379,13 @@ def export_animations(char_id: str, char_dir: Path, stem: str,
     A clip's `file` in the manifest is fetched relative to the whole output
     root (`write_index`'s `out_dir`), not to `char_dir`, so it carries
     `base_slug` even though `char_dir` already is `<out_dir>/<base_slug>`.
+    A clip the context rigs give parts to also carries a `show` list, and one
+    that parks a part off screen a `hide` list.
     """
     exporter = AnimationExporter(char_id)
+    show_rules = rig_show_rules(char_id)
+    model_path = char_dir / f"{stem}.glb"
+    model = PosedModel(model_path) if model_path.exists() else None
     clip_dir = char_dir / f"{stem}_anims"
     clip_dir.mkdir(parents=True, exist_ok=True)
     manifest = []
@@ -1034,7 +1404,7 @@ def export_animations(char_id: str, char_dir: Path, stem: str,
         taken.add(clip_stem)
         path = clip_dir / (clip_stem + ".glb")
         gltf.save(path)
-        manifest.append({
+        entry = {
             "name": name,
             "file": f"{base_slug}/{stem}_anims/{path.name}",
             "face": any(channel["target"]["path"] == "weights"
@@ -1043,7 +1413,17 @@ def export_animations(char_id: str, char_dir: Path, stem: str,
                                     - clip.m_MuscleClip.m_StartTime), 4),
             "loop": bool(clip.m_MuscleClip.m_LoopTime),
             "bytes": path.stat().st_size,
-        })
+        }
+        show = show_rules.get(_norm_key(name), [])
+        hide = model.parked(path, entry["duration"], show) if model else []
+        # `hide` runs before `show` in the viewer, so a name left in both would
+        # come back on screen.
+        show = [part for part in show if part not in hide]
+        if show:
+            entry["show"] = show
+        if hide:
+            entry["hide"] = hide
+        manifest.append(entry)
     (char_dir / f"{stem}.anims.json").write_text(
         json.dumps({"id": char_id, "clips": manifest}, indent=1))
     return manifest

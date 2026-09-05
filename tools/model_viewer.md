@@ -194,6 +194,65 @@ characters carry some, and the box is greyed out for the rest. They hang off
 sockets no clip animates, so left visible they drift away from the body the
 moment one plays — hence hidden by default.
 
+### Per-clip part visibility
+
+Which clips bring those parts out is stated by the game's context rigs: the
+timeline and fx bundles each ship whole copies of the model prefab — one per
+context clips play in (`<id>_Ready`, `<id>_Victory`, `fx_<id>_timeline_Ultra`,
+a cutscene `<id>_Actor`) — with every copy's swap-in parts already active or
+inactive for that context. `rig_show_rules()` reads them, matches each copy to
+the clip it names (the id and the `fx`/`base`/`timeline` furniture aside, with
+a `timeline` rig also answering to `<name>_TL`), and writes the parts left on
+into that clip's `.anims.json` entry as a `show` list. A copy is recognized by
+mesh identity — its renderers point at the same mesh objects the model prefab
+uses — and only whole copies count, since an FX prefab borrowing a single face
+mesh is previewing an effect, not stating visibility.
+
+This is a show-only overlay on the `optional` baseline: a clip with no matched
+rig keeps every swap-in hidden, and a part no rig switches off never gets a
+rule. Amber's rules come out exactly as the hand-written example on the
+gadget's advanced docs page — the cat in `Victory` and `Timeline`, nowhere
+else.
+
+### Parts a clip parks off screen
+
+A rig states the pose a clip starts from, not what the clip goes on to do, so
+it keeps naming a prop the clip has since put away. The game puts one away
+without deactivating the node it hangs from: it either scales that node to
+nothing — Chitose's cup, quilt and sitting legs collapse to a point for every
+clip she is not on her futon — or drives it out of the scene, as Ann's `Ready`
+does with her dog and her weapon, about 7 m under the floor. Nothing in the
+bundles says which, so `PosedModel` measures it: it re-poses the exported model
+on the CPU (joint world matrices from the clip's own tracks, inverse bind
+matrices, weights, 200 vertices a mesh, five times across the clip) and takes
+each mesh's bounding box at each sample. What it finds off goes in that clip's
+`hide` list in `.anims.json`.
+
+A mesh is off if it measures under a hundredth of a body height at every one
+of the five samples, or if its bounds never come near the body's — a body
+height away in any direction, or half that when it hangs entirely below the
+body, which is where a stowed prop nearly always goes. The scaled-away kind is
+never quite a point (Minova's `Walk` leaves her second weapon a millimetre
+across), but nothing meant to be seen is under a centimetre either, so the two
+are two orders of magnitude apart. The distance arm earns its keep as well:
+Otoha's `Victory` sword lies 1.9 m under the floor, a hair inside one body
+height, and Shimiao's `Ultra_Run` parks her weapon out to the side rather than
+below. Held props clear the body by well under half a body height even at arm's
+length, and stay beside it rather than under it; a prop that only appears
+midway through a clip has size at the later samples, so the first test leaves
+it alone. The body is taken as the mesh with the most vertices rather than by
+name, since a few models call it `cloth`. Names in both lists are dropped from
+`show`, because the viewer applies `hide` first and `show` second. 39 of the 52
+models have something to hide, 512 clips between them.
+
+What no rig states goes in `PART_OVERRIDES` in
+`page_generators/model_viewer.py`: `hideParts` joins the `optional` baseline
+for the character (Ann's dog, which every rig leaves on but the game walks out
+only for specific clips), and `clips` adds `show`/`hide` lists per clip name.
+Overrides apply when the manifest is built, so tuning them needs no re-export.
+`Module:ModelViewer` passes both through: per-clip `show`/`hide` on the clip
+entry, and the character's `hideParts` folded into `data-hide-parts`.
+
 ## Shader notes
 
 Channel semantics come from the shader's own property descriptions, recovered
@@ -246,9 +305,60 @@ Outline off: the patch is exactly `_OutlineColor`, not a texture region. Whether
 the game hits this too is unknown — this reproduces the source vertex colours
 faithfully, so if it's wrong it is wrong upstream, not in the export.
 
+## On the wiki
+
+`tools/model_viewer.html` is the local POC. The wiki shows the same models
+through the **ModelViewer** gadget written for
+[dev.miraheze.org](https://dev.miraheze.org/wiki/Template:ModelViewer), which
+turns a `.model-viewer` div's `data-` attributes into a three.js viewer and
+fetches nothing until one scrolls into view.
+
+The `.glb` files cannot live on the wiki: uploading them needs ManageWiki
+changes, and a Content Security Policy limits where a page may fetch from
+anyway. They go to [StellaSoraModels] on GitHub instead — the whole `actor3d`
+tree, character subdirectories and all — and jsDelivr serves them from there,
+which the CSP does allow.
+
+`page_generators/model_viewer.py` records the result:
+
+```bash
+uv run -m page_generators.model_viewer
+```
+
+It writes one page: `Module:ModelViewer/data.json`, the manifest of every
+model, skin and clip. Everything that reads it is maintained by hand on the
+wiki — `Module:ModelViewer` and its `/doc`, a `3D models` page holding a viewer
+per character, and a `3D models` section on each character's `/gallery` page,
+each of them one `{{#invoke:}}`. That split is the point: exporting a character
+or a skin changes the manifest and nothing else.
+
+The manifest holds paths relative to a `base` URL rather than whole URLs, and
+names a clip only where its file is not already named after it, which is what
+keeps 52 models and 1,878 clips inside 80 KB. `MODEL_REPO_REF` in that module
+is the git ref jsDelivr is pointed at; jsDelivr caches a branch for 12 hours,
+so a re-export that has to show up at once wants a tag or a commit sha there.
+
+The manifest is built from what is on disk here, so it will happily describe
+models nobody has pushed; push `actor3d` first, or the viewer 404s.
+
+Nothing here runs from `main` or `main2` yet. Pushing `actor3d` to GitHub is a
+step outside the bot, and publishing a manifest ahead of it gives every viewer a
+404, so this stays a job you run once the push is done — after which
+`save_manifest()` belongs in `main2` next to `char_gallery_page()`.
+
+[StellaSoraModels]: https://github.com/lihaohong6/StellaSoraModels
+
 ## Not implemented
 
 - Weapons sit unposed in the prefab — they are socket-attached at runtime. Play
   any clip and they snap into place, because the clips animate their sockets.
 - Size is unoptimised: textures are embedded as PNG. WebP or KTX2 plus Draco or
-  meshopt should get a character from ~4 MB to under ~1 MB for wiki use.
+  meshopt should get a character from ~4 MB to under ~1 MB for wiki use. It is
+  the wiki that makes this worth doing: a character page pulls 4.5 MB before a
+  reader sees anything.
+- The ModelViewer gadget is not installed on stellasora.miraheze.org. It needs
+  `MediaWiki:Gadget-ModelViewer.js` (one `mw.loader.load` of the dist bundle,
+  as on the dev wiki) and an entry in `MediaWiki:Gadgets-definition`, both of
+  which want an interface admin rather than the bot.
+- Only Amber, Donna and Nazuka are on GitHub so far — 191 of the 1,930 files
+  the manifest names.
