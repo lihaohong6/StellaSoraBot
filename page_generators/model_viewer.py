@@ -35,11 +35,7 @@ FEATURED_CLIPS = [
 # viewer's `optional` baseline for every clip; `clips` maps a clip name (as
 # .anims.json names it) to `show`/`hide` lists of its own. Applied here rather
 # than in the exporter so a tweak needs no re-export.
-PART_OVERRIDES: dict[str, dict[str, Any]] = {
-    # Ann's dog is switched on in every rig the bundles ship, but the game
-    # only walks it out for specific clips; keep it hidden until one is named.
-    "12301": {"hideParts": ["dog"], "clips": {}},
-}
+PART_OVERRIDES: dict[str, dict[str, Any]] = {}
 
 
 def as_clip(clip: dict) -> str | dict:
