@@ -365,7 +365,11 @@ class CharacterExporter:
             gltf_material["emissiveTexture"] = {"index": toon["textures"]["_EmissionMap"]}
             gltf_material["emissiveFactor"] = [
                 min(1.0, c) for c in toon["colors"].get("_EmissionColor", [1, 1, 1, 1])[:3]]
-        if floats.get("_Enable_Alpha_Test", 0.0) or floats.get("_DstBlend", 0.0):
+        # _Surface is URP's surface type: 1 is Transparent, which blends rather
+        # than cuts out, so it has to be checked before _DstBlend implies a mask.
+        if floats.get("_Surface", 0.0) > 0.5:
+            gltf_material["alphaMode"] = "BLEND"
+        elif floats.get("_Enable_Alpha_Test", 0.0) or floats.get("_DstBlend", 0.0):
             gltf_material["alphaMode"] = "MASK"
             gltf_material["alphaCutoff"] = floats.get("_AlphaCutoff", 0.5)
 
