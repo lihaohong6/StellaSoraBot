@@ -64,6 +64,17 @@ TARGET_ARRAY, TARGET_ELEMENT = 34962, 34963
 MODEL_PARTS = ("models", "materials", "textures")
 
 
+def character_is_known(char_id: str) -> bool:
+    """Whether the data files describe this id well enough to name it.
+
+    Bundles can ship before the data files describing them do, leaving a
+    character nothing but its id to be exported under. Those are skipped
+    rather than guessed at.
+    """
+    skin = autoload("CharacterSkin").get(char_id)
+    return skin is not None and str(skin["CharId"]) in autoload("Character")
+
+
 def character_base_name(char_id: str) -> str:
     """The character's own name, regardless of skin.
 
@@ -535,7 +546,7 @@ def write_index(out_dir: Path) -> None:
     what points into them.
     """
     entries = []
-    for char_id in available_character_ids():
+    for char_id in filter(character_is_known, available_character_ids()):
         base_slug = slug(character_base_name(char_id))
         name = character_display_name(char_id)
         path = out_dir / base_slug / f"{slug(name)}.glb"
@@ -1474,6 +1485,10 @@ def export_3d_models(char_ids: set[str] | None = None,
         for char_id in sorted(char_ids - available):
             print(f"WARNING: No char_{char_id}_models bundle found")
         char_ids &= available
+    unknown = {char_id for char_id in char_ids if not character_is_known(char_id)}
+    for char_id in sorted(unknown):
+        print(f"WARNING: No CharacterSkin entry for {char_id}")
+    char_ids -= unknown
     if not char_ids:
         return
 
