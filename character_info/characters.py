@@ -79,7 +79,7 @@ def get_characters() -> dict[str, Character]:
     result = {}
     for k, v in data.items():
         name = v["Name"]
-        if name == "???":
+        if name == "???" or "Spellbound Golem" in name:
             continue
         c = Character(v["Id"], name)
         c.rarity = CharacterRarity(items[v['Id']].rarity)

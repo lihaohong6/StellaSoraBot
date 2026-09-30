@@ -200,16 +200,17 @@ def _l2d_bundle_by_skin_id() -> dict[int, Path]:
     return result
 
 
-def _prefab_roots(objects: dict[int, ObjectReader], skin_id: int) -> dict[str, ObjectReader]:
+def _prefab_roots(envs: list[UnityPy.Environment], skin_id: int) -> dict[str, ObjectReader]:
     roots: dict[str, ObjectReader] = {}
-    for obj in objects.values():
-        if obj.type != ClassIDType.GameObject or not obj.container:
-            continue
-        container = obj.container.lower()
-        for variant in VARIANTS.values():
-            expected = f"/{skin_id}_{variant.prefab_suffix}.prefab"
-            if container.endswith(expected):
-                roots[variant.name] = obj
+    for env in envs:
+        env_objects = {obj.path_id: obj for obj in env.objects}
+        for container, pointer in env.container.items():
+            obj = env_objects.get(pointer.path_id)
+            if obj is None or obj.type != ClassIDType.GameObject:
+                continue
+            for variant in VARIANTS.values():
+                if container.lower().endswith(f"/{skin_id}_{variant.prefab_suffix}.prefab"):
+                    roots[variant.name] = obj
     return roots
 
 
@@ -852,15 +853,15 @@ def export_live2d(
 
         print(f"Processing {source_bundle.name}")
         env = UnityPy.load(str(source_bundle))
-        objects = {obj.path_id: obj for obj in env.objects}
+        envs = [env]
         l2d_bundle = l2d_bundles.get(skin_id)
         if l2d_bundle is None:
             print(f"WARNING: No char_l2d bundle found for skin {skin_id}")
         else:
-            l2d_env = UnityPy.load(str(l2d_bundle))
-            objects.update({obj.path_id: obj for obj in l2d_env.objects})
+            envs.append(UnityPy.load(str(l2d_bundle)))
+        objects = {obj.path_id: obj for e in envs for obj in e.objects}
         scripts = _script_names(objects, source_bundle, read_errors)
-        prefabs = _prefab_roots(objects, skin_id)
+        prefabs = _prefab_roots(envs, skin_id)
         for variant_name in sorted(selected_variants):
             prefab_root = prefabs.get(variant_name)
             if prefab_root is None:
