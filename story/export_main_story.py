@@ -161,24 +161,70 @@ def _chapter_stages(chapter_id: int, page_title: str) -> list[MainStoryStage]:
     return _order_stages(stages)
 
 
+def _branch_position(stage: MainStoryStage, positions: dict[str, int]) -> int:
+    if stage.label.isdigit():
+        return -1
+    return max((positions[r] for r in stage.requirements if r in positions), default=-1)
+
+
+def _dead_end_keys(stages: list[MainStoryStage]) -> set[str]:
+    children: dict[str, list[MainStoryStage]] = {}
+    for stage in stages:
+        for r in stage.requirements:
+            children.setdefault(r, []).append(stage)
+    dead_ends: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for stage in stages:
+            kids = children.get(stage.key, [])
+            if stage.key not in dead_ends and (
+                stage.is_end
+                or kids
+                and all(kid.key in dead_ends for kid in kids)
+                and sum(not kid.is_end for kid in kids) < 2
+            ):
+                dead_ends.add(stage.key)
+                changed = True
+    return dead_ends
+
+
 def _order_stages(stages: list[MainStoryStage]) -> list[MainStoryStage]:
     main = [stage for stage in stages if not stage.is_end]
     keys = {stage.key for stage in main}
+    dead_ends = _dead_end_keys(stages)
+    bad_end_forks = {
+        r
+        for stage in main
+        if stage.key in dead_ends
+        for r in stage.requirements
+        if r not in dead_ends
+    }
+
+    def priority(stage: MainStoryStage) -> tuple[int, int, bool, int]:
+        if any(r in dead_ends for r in stage.requirements):
+            group = 0
+        elif any(r in bad_end_forks for r in stage.requirements):
+            group = 1
+        else:
+            group = 2
+        return group, -_branch_position(stage, positions), not stage.is_battle, stage.story_id
+
     order: list[MainStoryStage] = []
-    done: set[str] = set()
+    positions: dict[str, int] = {}
     while len(order) < len(main):
         ready = [
             stage
             for stage in main
-            if stage.key not in done
-            and all(r in done or r not in keys for r in stage.requirements)
+            if stage.key not in positions
+            and all(r in positions or r not in keys for r in stage.requirements)
         ]
         if not ready:
             print("WARNING: Cycle in main story stage requirements")
             break
-        stage = min(ready, key=lambda v: (not v.is_battle, v.story_id))
+        stage = min(ready, key=priority)
+        positions[stage.key] = len(order)
         order.append(stage)
-        done.add(stage.key)
 
     ends = [stage for stage in stages if stage.is_end]
     result: list[MainStoryStage] = []
@@ -251,6 +297,34 @@ def _set_section(text: str, title: str, body: str) -> str:
     return f"{text.rstrip()}\n\n== {title} ==\n{body}"
 
 
+def _jump_target(stage: MainStoryStage) -> str | None:
+    data = None if stage.is_battle else load_story_config(stage.key)
+    jumps = [row["param"][0] for row in data or () if row.get("cmd") == "JUMP_AVG_ID"]
+    return normalize_story_id(jumps[-1]) if jumps else None
+
+
+def _nav_pages(stages: list[MainStoryStage], i: int) -> tuple[str | None, str | None]:
+    stage = stages[i]
+    index = {other.key: j for j, other in enumerate(stages)}
+    parents = [r for r in stage.requirements if r in index]
+    if len(parents) == 1:
+        prev_stage = stages[index[parents[0]]]
+    else:
+        prev_stage = stages[i - 1] if i > 0 else None
+    children = [other for other in stages if stage.key in other.requirements]
+    jump_target = _jump_target(stage)
+    if jump_target in index:
+        next_stage = stages[index[jump_target]]
+    elif children:
+        next_stage = min(children, key=lambda v: (v.is_end, index[v.key]))
+    else:
+        next_stage = stages[i + 1] if i < len(stages) - 1 else None
+    return (
+        prev_stage.page_title if prev_stage else None,
+        next_stage.page_title if next_stage else None,
+    )
+
+
 def build_main_story_transcripts() -> dict[str, str]:
     episodes = get_main_story_episodes()
     transcripts: dict[str, str] = {}
@@ -258,9 +332,7 @@ def build_main_story_transcripts() -> dict[str, str]:
         stages = _story_stages(chapter)
         choice_target_links = major_choice_target_links(stages, episodes)
         for i, stage in enumerate(stages):
-            prev_page = stages[i - 1].page_title if i > 0 else None
-            next_page = stages[i + 1].page_title if i < len(stages) - 1 else None
-            nav = story_nav_template("StoryNav", prev_page, next_page)
+            nav = story_nav_template("StoryNav", *_nav_pages(stages, i))
             content = episode_to_messenger_template(
                 episodes[stage.episode_id],
                 choice_target_links.get(stage.episode_id),
@@ -288,10 +360,11 @@ def build_stage_page(
 
 def build_stages_section(chapter: MainStoryChapter) -> str:
     episodes = get_main_story_episodes()
+    dead_ends = _dead_end_keys(chapter.stages)
     lines = []
     for stage in chapter.stages:
         name = f"[[{stage.page_title}|{stage.title}]]" if stage.episode_id in episodes else stage.title
-        bullet = "**" if stage.is_end else "*"
+        bullet = "**" if stage.is_end or any(r in dead_ends for r in stage.requirements) else "*"
         line = f"{bullet} '''{stage.label}: {name}'''"
         if stage.description:
             line += f"<br>{stage.description}"
