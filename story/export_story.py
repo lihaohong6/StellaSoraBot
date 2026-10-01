@@ -5,6 +5,7 @@ from functools import cache
 from typing import Optional
 
 from character_info.char_sprite_face import sanitize_css_class
+from character_info.char_sprites import get_avg_characters
 from character_info.characters import id_to_char
 from story.parse_story import get_story_episodes, StoryEpisode, StoryRow
 from story.story_assets import export_story_assets, get_front_object_file_name
@@ -72,11 +73,16 @@ def _tyrant_sprite_name(char_name: str) -> str:
 
 
 def _sprite_name_for_character_id(character_id: str, fallback_name: str) -> str:
+    avg_characters, reuse_table = get_avg_characters()
+    character_id = reuse_table.get(character_id, character_id)
     match = re.fullmatch(r"avg1_(\d+)", character_id)
     if match:
         character = id_to_char(match.group(1))
         if character is not None:
             return character.name
+    avg_character = avg_characters.get(character_id)
+    if avg_character is not None:
+        return avg_character.name
     return fallback_name
 
 
