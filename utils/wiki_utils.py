@@ -33,7 +33,7 @@ def force_section_text(wikitext: WikiText, section_title: str, text: str, prepen
             heading = "=" * level
             sec.string = f"{heading}{section_title}{heading}\n" + text + "\n" + sec.string
             return True
-        if sec.title.strip() == section_title:
+        if sec.title.strip() == section_title.strip():
             heading = "=" * sec.level
             sec.string = f"{heading}{section_title}{heading}\n" + text + "\n"
             return True
