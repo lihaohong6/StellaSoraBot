@@ -145,8 +145,8 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
         cmd = row["cmd"]
         params = row.get("param", [])
 
-        def append_dialogue(char_id: str, text: str):
-            speaker_name = get_character_name_from_id(char_id)
+        def append_dialogue(char_id: str, text: str, speaker_name: str = ""):
+            speaker_name = speaker_name or get_character_name_from_id(char_id)
 
             char_state = state.get_character_state(char_id)
 
@@ -176,6 +176,13 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
             text = process_text(text)
             if text:
                 append_dialogue(char_id, text)
+
+        def set_bubble():
+            char_id, expression, _, _, _, _, speaker_name, _, text, _ = params
+            text = process_text(text)
+            if text:
+                update_character_state(char_id, None, expression)
+                append_dialogue(char_id, text, process_text(speaker_name))
 
         def set_phone_msg():
             msg_type, char_id, image_name, _, _, _, _, text, _ = params
@@ -380,6 +387,7 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
         dispatcher = {
             "SetTalk": set_talk,
             "SetPhoneMsg": set_phone_msg,
+            "SetBubble": set_bubble,
             "SetBGM": set_bgm,
             "SetBg": set_bg,
             "SetSceneHeading": set_scene_heading,

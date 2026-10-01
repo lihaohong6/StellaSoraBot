@@ -199,7 +199,7 @@ def save_nova_times_index() -> None:
 
 
 def main():
-    # export_story_assets(get_nova_times_episodes())
+    export_story_assets(get_nova_times_episodes())
     save_nova_times_transcripts()
     save_nova_times_story_pages()
     save_nova_times_index()
