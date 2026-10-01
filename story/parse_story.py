@@ -354,7 +354,8 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
 
         def set_major_choice():
             choice_texts = []
-            option_params = params[1:-5]
+            evidence_ids = []
+            option_params = params[1:22] + params[27:]
             for i in range(0, len(option_params), 7):
                 option = option_params[i:i + 7]
                 if len(option) < 4:
@@ -365,7 +366,11 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
                     choice_texts.append(f"{prompt}<br>{action}")
                 else:
                     choice_texts.append(prompt or action)
+                evidence_ids.append(str(option[5]) if len(option) > 5 else "")
             append_choice_begin(str(params[0]), choice_texts, "major")
+            for num, evidence_id in enumerate(evidence_ids, 1):
+                if evidence_id:
+                    rows[-1].attributes[f"evidence{num}"] = evidence_id
 
         def set_choice_jump():
             rows.append(StoryRow("choice_jump", {

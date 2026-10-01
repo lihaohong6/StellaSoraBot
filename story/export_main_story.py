@@ -100,6 +100,14 @@ def _story_requirements() -> dict[str, tuple[str, ...]]:
     }
 
 
+@cache
+def _story_evidence() -> dict[str, tuple[str, ...]]:
+    return {
+        condition["ConditionId"]: tuple(condition.get("EvIds_a", ()))
+        for condition in autoload("StoryCondition").values()
+    }
+
+
 def _battle_lua_name(row: dict[str, Any]) -> str:
     chapter, suffix = row["StoryId"].removeprefix("BAm").split("_", 1)
     return f"bbm{chapter}_{suffix if suffix.startswith('BT') else row['Index']}".lower()
@@ -147,6 +155,7 @@ def _chapter_stages(chapter_id: int, page_title: str) -> list[MainStoryStage]:
                 description=process_text(row["Desc"]),
                 is_battle=is_battle,
                 requirements=requirements,
+                evidence_ids=_story_evidence().get(row.get("ConditionId"), ()),
             )
         )
     return _order_stages(stages)
@@ -256,9 +265,9 @@ def build_main_story_transcripts() -> dict[str, str]:
                 episodes[stage.episode_id],
                 choice_target_links.get(stage.episode_id),
             )
-            transcripts[stage.page_title] = (
-                f"{nav}\n{with_tyrant_gender_selector(content)}\n{nav}"
-            )
+            if not stage.is_battle:
+                content = with_tyrant_gender_selector(content)
+            transcripts[stage.page_title] = f"{nav}\n{content}\n{nav}"
     return transcripts
 
 
@@ -283,9 +292,9 @@ def build_stages_section(chapter: MainStoryChapter) -> str:
     for stage in chapter.stages:
         name = f"[[{stage.page_title}|{stage.title}]]" if stage.episode_id in episodes else stage.title
         bullet = "**" if stage.is_end else "*"
-        line = f"{bullet} {stage.label}: {name}"
+        line = f"{bullet} '''{stage.label}: {name}'''"
         if stage.description:
-            line += f" — {stage.description}"
+            line += f"<br>{stage.description}"
         lines.append(line)
     return "\n".join(lines)
 
@@ -338,6 +347,7 @@ def save_main_story_stage_pages() -> None:
                 page.text if page.exists() else "",
             )
             save_page(page, text, "update main story transcript")
+        pass
 
 
 def save_main_story_chapter_pages() -> None:

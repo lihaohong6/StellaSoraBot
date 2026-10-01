@@ -1,6 +1,6 @@
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cache
 from typing import Optional
 
@@ -32,6 +32,7 @@ class StoryEntry:
     page_title: str
     episode_id: str
     parent_episode_ids: tuple[str, ...]
+    evidence_ids: tuple[str, ...] = field(default=(), kw_only=True)
 
 
 @dataclass
@@ -403,25 +404,27 @@ def major_choice_target_links(
             if row.attributes.get("choice_type") != "major":
                 continue
 
-            options = [
-                key.removeprefix("option")
-                for key in row.attributes
-                if re.fullmatch(r"option\d+", key)
-            ]
-            options = sorted(options, key=int)
-            if len(options) != len(child_entries):
-                print(
-                    "WARNING: Major choice target count mismatch for "
-                    f"{entry.page_title}: {len(options)} options, "
-                    f"{len(child_entries)} child pages"
-                )
-                continue
-
             choice_id = row.attributes["choice_id"]
-            for option, child_entry in zip(options, child_entries):
+            for key in row.attributes:
+                if not re.fullmatch(r"option\d+", key):
+                    continue
+                option = key.removeprefix("option")
+                evidence_id = row.attributes.get(f"evidence{option}")
+                targets = [
+                    child_entry
+                    for child_entry in child_entries
+                    if evidence_id in child_entry.evidence_ids
+                ]
+                if len(targets) != 1:
+                    print(
+                        "WARNING: Cannot resolve major choice target for "
+                        f"{entry.page_title} option {option} ({evidence_id}): "
+                        f"{len(targets)} matching child pages"
+                    )
+                    continue
                 result.setdefault(entry.episode_id, {})[
                     (choice_id, option)
-                ] = child_entry.page_title
+                ] = targets[0].page_title
 
     return result
 
