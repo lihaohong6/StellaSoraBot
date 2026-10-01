@@ -3,8 +3,8 @@ from utils.upload_utils import UploadRequest, process_uploads
 
 
 def upload_cgs():
-    p = assets_root / "imageavg" / "avgcg"
-    images = p.glob("*.png")
+    p = assets_root / "imageavg"
+    images = [*(p / "avgcg").glob("*.png"), *(p / "avgfg").glob("*.png")]
     image_categories = [
         ("story_event", "Event story CGs"),
         ("story_main", "Main story CGs"),
@@ -15,6 +15,8 @@ def upload_cgs():
         for search_keyword, category in image_categories:
             if search_keyword not in f.name:
                 continue
+            if f.parent.name == "avgfg":
+                category = "Story foreground images"
             upload_requests.append(UploadRequest(
                 f,
                 "File:" + f.name,
