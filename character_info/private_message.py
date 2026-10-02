@@ -55,10 +55,10 @@ def get_character_sex_strings() -> dict[str, list[str]]:
     return data["SEX"]
 
 
-def process_text(text: str) -> str:
+def process_text(text: str, dark_background: bool = False) -> str:
     sex_dict = get_character_sex_strings()
     text, _ = re.subn(r"==SEX\d*==", lambda m: "/".join(sex_dict[m.group(0)]), text)
-    text = escape_text(text)
+    text = escape_text(text, dark_background)
     return text
 
 
@@ -96,7 +96,7 @@ def parse_private_messages(char: Character, data: list[dict[str, Any]]) -> Chara
             if char_string == "avg3_101" and msg_type in {0, 3}:
                 msg_type += 1
 
-            text = process_text(text)
+            text = process_text(text, msg_type in {1, 4})
             show_pfp = False
             if char_string != state.char_string:
                 show_pfp = True

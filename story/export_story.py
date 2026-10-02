@@ -43,7 +43,6 @@ class ChoiceContext:
     option: Optional[str] = None
 
 
-PROTAGONIST_CHARACTER_IDS = frozenset({"avg3_100"})
 TYRANT_GENDER_GROUP = "tgender"
 FEMALE_TYRANT_NAME = "Female tyrant"
 MALE_TYRANT_NAME = "Male tyrant"
@@ -156,10 +155,7 @@ def story_row_to_messenger(
         variant = row.attributes.get("variant", "a")
         expression = row.attributes.get("expression", "00")
         character_id = row.attributes.get("character_id", "")
-        is_reply = (
-            row.attributes.get("is_reply") == "true"
-            or character_id in PROTAGONIST_CHARACTER_IDS
-        )
+        is_reply = row.attributes.get("is_reply") == "true"
 
         speaker_name = speaker
         sprite_name = _sprite_name_for_character_id(character_id, speaker_name)
