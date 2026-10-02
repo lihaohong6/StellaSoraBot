@@ -451,8 +451,8 @@ def save_main_story_index() -> None:
 def main():
     export_story_assets(get_main_story_episodes())
     save_main_story_stage_pages()
-    save_main_story_chapter_pages()
-    save_main_story_index()
+    # save_main_story_chapter_pages()
+    # save_main_story_index()
 
 
 if __name__ == "__main__":

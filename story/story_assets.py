@@ -8,6 +8,12 @@ def get_front_object_file_name(image_name: str) -> str:
     return f"Story element {image_name}.png"
 
 
+def gendered_image_pair(image_name: str) -> tuple[str, str] | None:
+    if not image_name.endswith(("_fp", "_mp")):
+        return None
+    return f"{image_name[:-3]}_fp", f"{image_name[:-3]}_mp"
+
+
 def export_bgm_files(episodes: dict[str, StoryEpisode]) -> None:
     bgm_files: set[str] = set()
     for episode in episodes.values():
@@ -68,7 +74,7 @@ def export_front_object_files(episodes: dict[str, StoryEpisode]) -> None:
             if row.name == "front_object":
                 image_name = row.attributes.get("image", "")
                 if image_name:
-                    image_names.add(image_name)
+                    image_names.update(gendered_image_pair(image_name) or [image_name])
 
     upload_requests = []
     for image_name in sorted(image_names):

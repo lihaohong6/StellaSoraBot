@@ -8,7 +8,7 @@ from character_info.char_sprite_face import sanitize_css_class
 from character_info.char_sprites import get_avg_characters
 from character_info.characters import id_to_char
 from story.parse_story import get_story_episodes, StoryEpisode, StoryRow
-from story.story_assets import export_story_assets, get_front_object_file_name
+from story.story_assets import export_story_assets, gendered_image_pair, get_front_object_file_name
 from utils.data_utils import assets_root
 from utils.wiki_utils import save_page
 
@@ -110,19 +110,22 @@ def _story_background_template(bg_image: str) -> str | None:
     return None
 
 
+def _gender_content(female: str, male: str) -> str:
+    return f"{{{{GenderContent|{female}|{male}}}}}"
+
+
 def _story_background_content(bg_image: str) -> str | None:
-    pair = _gendered_background_pair(bg_image)
+    pair = gendered_image_pair(bg_image) or _gendered_background_pair(bg_image)
     if pair is not None:
         female_template = _story_background_template(pair[0])
         male_template = _story_background_template(pair[1])
         if female_template is not None and male_template is not None:
-            return (
-                "{{GenderContent"
-                f"|{female_template}"
-                f"|{male_template}"
-                "}}"
-            )
+            return _gender_content(female_template, male_template)
     return _story_background_template(bg_image)
+
+
+def _front_object_image(image_name: str) -> str:
+    return f"[[File:{get_front_object_file_name(image_name)}|200px|link=]]"
 
 
 def _append_group_option(
@@ -235,8 +238,11 @@ def story_row_to_messenger(
     if row.name == "front_object":
         image_name = row.attributes.get("image", "")
         if image_name:
-            file_name = get_front_object_file_name(image_name)
-            content = f"[[File:{file_name}|200px|link=]]"
+            pair = gendered_image_pair(image_name)
+            if pair is None:
+                content = _front_object_image(image_name)
+            else:
+                content = _gender_content(*map(_front_object_image, pair))
             result.extend(["| raw", f"| content :: {content}", ""])
         return _append_group_option(result, group, option)
 
