@@ -9,6 +9,7 @@ from utils.text_utils import escape_text
 
 
 PROTAGONIST_CHARACTER_IDS = frozenset({"avg3_100"})
+SPEAKER_NAME_ALIASES = {"Taffett": "avg1_139"}
 
 
 class StoryRow:
@@ -181,7 +182,10 @@ def parse_story_episode(episode_id: str, data: Any) -> StoryEpisode:
                 return
             text = process_text(text, is_reply_char(char_id))
             if text:
-                append_dialogue(char_id, text)
+                if char_id in SPEAKER_NAME_ALIASES:
+                    append_dialogue(SPEAKER_NAME_ALIASES[char_id], text, char_id)
+                else:
+                    append_dialogue(char_id, text)
 
         def set_bubble():
             char_id, expression, _, _, _, _, speaker_name, _, text, _ = params
