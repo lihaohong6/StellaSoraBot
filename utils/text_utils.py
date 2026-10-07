@@ -63,7 +63,7 @@ def _escape_rich_text_markup(text: str, dark_background: bool) -> str:
             return name, f"<{name}>", f"</{name}>"
         return None
 
-    tag_pattern = r'<(/?)(color|align|i|b|size|alpha|voffset|space|margin(?:-left|-right)?)(?:\s*=\s*"?([^">]*)"?)?>'
+    tag_pattern = r'<(/?)(color|align|i|b|size|alpha|voffset|space|indent|margin(?:-left|-right)?)(?:\s*=\s*"?([^">]*)"?)?>'
     for match in re.finditer(tag_pattern, text):
         parts.append(text[last_end:match.start()])
         last_end = match.end()
@@ -101,7 +101,8 @@ def escape_text(text: str, dark_background: bool = False) -> str:
             .replace("==PLAYER_NAME==", "<username>")
             .replace("==W==", "")
             .replace("==B==", "")
-            .replace("==P==", ""))
+            .replace("==P==", "")
+            .replace("\\t", ""))
     text = re.subn(r"^(?:<br/>)+", "", text)[0]
     text = re.subn(r"(?:<br/>|</[a-z]+>)*$", lambda m: m.group(0).replace("<br/>", ""), text, count=1)[0]
     text = re.subn("~~(?=~)", "~~<nowiki/>", text)[0]
